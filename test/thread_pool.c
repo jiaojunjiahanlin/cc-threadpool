@@ -3,6 +3,7 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <asm/uaccess.h>
+#include <linux/delay.h>
 
 
 
@@ -46,7 +47,7 @@ struct thread_pool_worker
 
 static struct privatedata *dmt;
 static struct thread_pool *pool;
-static int count;
+int count=0;
 
 static void thread_pool_exit_worker(struct thread_pool_worker *w)
 {
@@ -282,7 +283,7 @@ int setup(void *private, void *data)
 int action(void *private, void *data)
 { 
      count = count+1;
-     printk("-----------------actioin"+count);
+     printk("----------------------------------------------------------------------------------------------------------------action"+count);
      return 0;
 }
 
@@ -346,8 +347,10 @@ int thread_pool_schedule(struct thread_pool *p,
     dmt= kzalloc(sizeof(struct privatedata), GFP_KERNEL);
     char *name=NULL;
     pool= thread_pool_create(10, name, private_init, private_cleanup, dmt);
-     if (1)
+    int n=300;
+     while (n--)
       {
+          mdelay(100);
           thread_pool_schedule_private(pool,setup,action, dmt, MAX_SCHEDULE_TIMEOUT,dmt);
       }
     return 0;
