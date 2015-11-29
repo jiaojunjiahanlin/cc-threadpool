@@ -118,25 +118,7 @@ struct kcached_job {
 	struct page_list *pages;
 };
 
-typedef struct worker
-{
-	/* data */
-	void *(*process)(void *arg); 
-	void *arg; 
-	struct worker *next;
-}Thread_worker;
 
-typedef struct 
-{
-
-	spin_lock queue_lock;
-	struct completion c;
-	Thread_worker *queue_head;
-	int shutdown; 
-	task_struct *tsk;
-	int max_thread_num;
-	int cur_queue_size;
-}Thread_pool;
 
 
 static int dm_io_sync_vm(unsigned int num_regions, struct dm_io_region
