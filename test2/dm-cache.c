@@ -1578,6 +1578,68 @@ static int cache_read_miss(struct cache_c *dmc, struct bio* bio,
 	return 0;
 }
 
+
+
+static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block) {
+
+	struct cacheblock *cache = dmc->cache;
+	unsigned int offset, head, tail;
+	struct kcached_job *job;
+	struct kcached_job *prejob;
+	sector_t request_block, left;
+
+	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);/* 计算bio的请求扇区的起始地址跟完整的4k（也就是8）的模，然后算出在4k中的偏移扇区数 */
+	request_block = bio->bi_sector - offset;   /*算出磁盘hdd的起始块地址的扇区地址*/
+
+	if (cache[cache_block].state & VALID) {
+		DPRINTK("Replacing %llu->%llu",
+		        cache[cache_block].block, request_block);
+		dmc->replace++;
+	} else DPRINTK("Insert block %llu at empty frame %llu",
+		request_block, cache_block);
+
+
+
+	for(int i=0;i<dmc->ra->size;i++)
+	{
+
+		j=((cache_block-initsize/4k)+i)mask;
+
+		cache_block=initsize+j*blocksize;
+		request_block=request_block+i*block_size;
+
+
+		cache_insert(dmc, request_block, cache_block); /* Update metadata first */
+
+	job = new_kcached_job(dmc, bio, request_block, cache_block);
+
+
+
+	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; 
+	if (left < dmc->block_size) {         
+		tail = to_bytes(left) - bio->bi_size - head; 
+		job->src.count = left;    
+		job->dest.count = left;
+	} 
+
+
+	job->nr_pages= 0;
+					
+	job->rw = write; /* Fetch data from the source device */
+
+	DPRINTK("Queue job for %llu (need %u pages)",
+	        bio->bi_sector, job->nr_pages);
+	queue_job(job);
+
+	}
+
+	
+	return 0;
+}
+
+
+
+
 /*
  * Handle a write cache miss:
  *  If write-through, forward the request to source device.
@@ -1687,8 +1749,6 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		res = precache_lookup(dmc, request_block, &cache_block);//查找是否命中，进入函数cache_lookup。
 		
 	    unsigned long on= ondemand_readahead(bio,cache_block->ra,request_block); //给出预取大小，和预取的位置。开始预取。
-
-
 
 
 
