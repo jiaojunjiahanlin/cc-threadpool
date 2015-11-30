@@ -57,6 +57,7 @@
 
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	65536
+#define SEQ_CACHE_SIZE	2048
 #define DEFAULT_CACHE_ASSOC	1024
 #define DEFAULT_BLOCK_SIZE	8
 #define CONSECUTIVE_BLOCKS	512
@@ -1063,7 +1064,7 @@ static unsigned long hash_block(struct cache_c *dmc, sector_t block)
 	//我们就取这hash值的高几为作为索引值，之所以取高几位，是因为高位的数更具有随机性，能够减少所谓“冲突”。什么是冲突呢？从上面的算法来看，
 	//key和hash值并不是一一对应的。有可能两个key算出来得到同一个hash值，这就称为“冲突”。
 
-	//结论就是1024组组关联映射。
+	//结论就是1024路组关联映射。
 
  	return set_number;
 }
@@ -1197,7 +1198,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	                    sector_t *cache_block)
 {
 	//cache_c结构体指针，block请求的扇区：请求的bio的扇区－扇区在块中的偏移。即是本块的起始扇区位置。cache_block，用于存放找到替换的或者命中的块的位置
-	unsigned long set_number = 1000;//组号。
+	unsigned long set_number = DEFAULT_CACHE_SIZE／DEFAULT_CACHE_ASSOC;//组号。
 	sector_t index;
 	int i, res;
 	unsigned int cache_assoc = dmc->assoc; //定义缓存的组数为dmc的路数。
@@ -1205,15 +1206,9 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	int invalid = -1, oldest = -1, oldest_clean = -1;
 	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
 
-	index=set_number * cache_assoc; //组号＊组内路数＝索引（是请求到的组第一块的扇区号）
-//is_state是用来将x&y，其含义是：INVALID 0 VALID 1	RESERVED 2	DIRTY 4	 WRITEBACK	8	
-//注:dm-cache缓存块的几种状态
-//有效块(valid):与原磁盘数据块一致；
-//保留块(reserved):该缓存块已分配，但尚未写入数据；
-//脏块(dirty):脏数据块是相对于原数据块而言的，是指被修改过的，与原数据不一致的数据块；
-//无效块(invalid):该缓存块上数据已失效；
-//写回块(writeback):该缓存块上的数据正被写回原磁盘；
-	for (i=0; i<DEFAULT_CACHE_SIZE; i++, index++) {
+	index=set_number * cache_assoc; 
+
+	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
@@ -1222,7 +1217,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 				{
 					hit_readahead_marker++;
 				}
-				*cache_block = index; //都是用的块地址
+				*cache_block = index; 
 				/* Reset all counters if the largest one is going to overflow */
 				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 				cache[index].counter = ++dmc->counter;
@@ -1232,13 +1227,13 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 				if (!is_state(cache[index].state, RESERVED) &&
 				    !is_state(cache[index].state, WRITEBACK)) {
 					if (!is_state(cache[index].state, DIRTY) &&
-					    cache[index].counter < clean_counter) { //寻找干净块，并且干净块的时间最久没使用的块。
+					    cache[index].counter < clean_counter) { 
 						clean_counter = cache[index].counter;  
-						oldest_clean = i;   //oldest_clean的含义就是时间久的块但是又同时是干净的块。
+						oldest_clean = i; 
 					}
 					if (cache[index].counter < counter) {
 						counter = cache[index].counter;
-						oldest = i; //寻找脏块中时间最久的块。先写回，再替换。
+						oldest = i;
 					}
 				}
 			}
@@ -1547,23 +1542,13 @@ static int cache_read_miss(struct cache_c *dmc, struct bio* bio,
 	if (0 == head && 0 == tail) /*如果请求的正好是4k的大小，那么我就*/
 		{
 			job->nr_pages= 0;
-			if (prefetch)
-			{
-
-				prefetch＝1;
-			}
+			
 			
 		}
 		
 	else /* Need new pages to store extra data 否则我就要另外分配了*/
 		{
 			job->nr_pages = dm_div_up(head, PAGE_SIZE) + dm_div_up(tail, PAGE_SIZE); /*划分为两个任务来执行，这里都是字节的运算传递*/
-
-			if (prefetch)
-			{
-
-				prefetch＝2;
-			}
 
 		}
 
@@ -1588,8 +1573,8 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	struct kcached_job *prejob;
 	sector_t request_block, left;
 
-	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);/* 计算bio的请求扇区的起始地址跟完整的4k（也就是8）的模，然后算出在4k中的偏移扇区数 */
-	request_block = bio->bi_sector - offset;   /*算出磁盘hdd的起始块地址的扇区地址*/
+	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
+	request_block = bio->bi_sector - offset;   
 
 	if (cache[cache_block].state & VALID) {
 		DPRINTK("Replacing %llu->%llu",
@@ -1747,11 +1732,33 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		// 第一步，从顺序分区找替换地址。
 
 		res = precache_lookup(dmc, request_block, &cache_block);//查找是否命中，进入函数cache_lookup。
+		if (1 == res)
+		{
+			/* Cache hit; server request from cache */  
+			//只要命中，我就封装一个args扔给下面这个函数。
+		    //thread_pool_schedule_private(n->pool,setup(),action(), void *data, long timeout, n);n为work对象
+		    if (marker)
+		    {
+		    	precache_miss();
+		    }
+			return cache_hit(dmc, bio, cache_block);
+		}        
+		
+		
+	else if (0 == res) /* Cache miss; replacement block is found */
+		{
+			return precache_miss(dmc, bio, cache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
+		}
+		
+	else if (2 == res) { /* Entire cache set is dirty; initiate a write-back */
+
+		write_back(dmc, cache_block, 1);
+		dmc->writeback++;
+
+		}
+
 		
 	    unsigned long on= ondemand_readahead(bio,cache_block->ra,request_block); //给出预取大小，和预取的位置。开始预取。
-
-
-
 	     
 	}
 
@@ -2159,7 +2166,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			goto bad6;
 		}
 	} else
-		dmc->block_size = DEFAULT_BLOCK_SIZE;
+	dmc->block_size = DEFAULT_BLOCK_SIZE;
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
 
@@ -2226,7 +2233,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
 
-	order = dmc->size * sizeof(struct cacheblock);
+	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
