@@ -1444,9 +1444,7 @@ static int precache_insert(struct cache_c *dmc, sector_t block,
 	 */
        if (i=0)
        {
-       	cache[cache_block].ra->start=request_block;
-       	cache[cache_block].ra->size=;
-       	cache[cache_block].ra->async_size=;
+       	cache[cache_block].ra->hit_readahead_marker=1;
 
        }
 	cache[cache_block].block = block;
