@@ -1585,22 +1585,19 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	} else DPRINTK("Insert block %llu at empty frame %llu",
 		request_block, cache_block);
 
-
+    cache_read_miss(dmc, bio, cache_block);
 
 	for(int i=0;i<dmc->ra->size;i++)
 	{
 
-		j=((cache_block-initsize/4k)+i)mask;
+		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i+1)%SEQ_CACHE_SIZE;
 
-		cache_block=initsize+j*blocksize;
-		request_block=request_block+i*block_size;
-
+		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
+		request_block=request_block+(i+1)*DEFAULT_BLOCK_SIZE;
 
 		cache_insert(dmc, request_block, cache_block); /* Update metadata first */
 
 	job = new_kcached_job(dmc, bio, request_block, cache_block);
-
-
 
 	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; 
 	if (left < dmc->block_size) {         
@@ -1742,7 +1739,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
 		    	unsigned long on= ondemand_readahead(bio,cache[precache_block].ra,request_block); //给出预取大小，和预取的位置。开始预取。
-		    	precache_miss(dmc, bio, precache_block);
+		    	precache_read_miss(dmc, bio, precache_block);
 		    } 
 			return cache_hit(dmc, bio, cache_block);
 		}        
@@ -1752,9 +1749,9 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		{
 			    cache[precache_block].ra->hit_readahead_marker=0;
 		    	unsigned long on= ondemand_readahead(bio,cache[precache_block].ra,request_block); //给出预取大小，和预取的位置。开始预取。
-		    	precache_miss(dmc, bio, precache_block);
+		    	precache_read_miss(dmc, bio, precache_block);
 		   
-			return precache_miss(dmc, bio, cache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
+			return precache_read_miss(dmc, bio, cache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
 		}
 		
 	else if (2 == res) { /* Entire cache set is dirty; initiate a write-back */
