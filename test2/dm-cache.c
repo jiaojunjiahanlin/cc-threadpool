@@ -300,7 +300,7 @@ struct file_ra_state {
 /*
  * A minimal readahead algorithm for trivial sequential/random reads.
  */
-static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *ra, sector_t request_block)
+static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *prera,struct file_ra_state *nextra, sector_t request_block,int hit)
 {
 	unsigned long max = max_sane_readahead(ra->ra_pages);
 	int size;
@@ -309,16 +309,16 @@ static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *ra
 	/*
 	 * start of file
 	 */
-	if (!offset)
+	if (!hit)
 		goto initial_readahead;
 
 
 
-	if (hit_readahead_marker) {
+	if (prera->hit_readahead_marker) {
 		
-        ra->start = request_block+DEFAULT_BLOCK_SIZE;
-		size = get_next_ra_size(ra, max);
-		async_size = ra->size;
+        nextra->start = prera->start+prera->size;
+		nextra->size = get_next_ra_size(prera, max);
+		nextra->async_size = ra->size;
 		goto readit;
 
 	}
@@ -335,15 +335,69 @@ readit:
 	 * If so, trigger the readahead marker hit now, and merge
 	 * the resulted next readahead window into the current one.
 	 */
-	if (offset == ra->start && ra->size == ra->async_size) {
-		ra->async_size = get_next_ra_size(ra, max);
-		ra->size += ra->async_size;
-	}
+
 
 	return 1;
 }
 
 
+
+static int prehitcache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block) {
+
+	struct cacheblock *cache = dmc->cache;
+	unsigned int offset, head, tail;
+	struct kcached_job *job;
+	struct kcached_job *prejob;
+	sector_t request_block, left;
+
+	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
+	request_block = bio->bi_sector - offset;   
+
+	if (cache[cache_block].state & VALID) {
+		DPRINTK("Replacing %llu->%llu",
+		        cache[cache_block].block, request_block);
+		dmc->replace++;
+	} else DPRINTK("Insert block %llu at empty frame %llu",
+		request_block, cache_block);
+
+	for(int i=0;i<dmc->ra->size;i++)
+	{
+
+
+		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
+
+		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
+		if(i=0)
+		{
+			
+		}
+		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
+
+		cache_insert(dmc, request_block, cache_block); /* Update metadata first */
+
+	job = new_kcached_job(dmc, bio, request_block, cache_block);
+
+	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; 
+	if (left < dmc->block_size) {         
+		tail = to_bytes(left) - bio->bi_size - head; 
+		job->src.count = left;    
+		job->dest.count = left;
+	} 
+
+
+	job->nr_pages= 0;
+					
+	job->rw = write; /* Fetch data from the source device */
+
+	DPRINTK("Queue job for %llu (need %u pages)",
+	        bio->bi_sector, job->nr_pages);
+	queue_job(job);
+
+	}
+
+	
+	return 0;
+}
 
 
 
@@ -1379,6 +1433,30 @@ static int cache_insert(struct cache_c *dmc, sector_t block,
 	return 1;
 }
 
+
+static int precache_insert(struct cache_c *dmc, sector_t block,
+	                    sector_t cache_block,int i)
+{
+	struct cacheblock *cache = dmc->cache;
+
+	/* Mark the block as RESERVED because although it is allocated, the data are
+       not in place until kcopyd finishes its job.
+	 */
+       if (i=0)
+       {
+       	cache[cache_block].ra->start=request_block;
+       	cache[cache_block].ra->size=;
+       	cache[cache_block].ra->async_size=;
+
+       }
+	cache[cache_block].block = block;
+	cache[cache_block].state = RESERVED;
+	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
+	cache[cache_block].counter = ++dmc->counter;
+
+	return 1;
+}
+
 /*
  * Invalidate a block (specified by cache_block) in the cache.
  */
@@ -1567,7 +1645,7 @@ static int cache_read_miss(struct cache_c *dmc, struct bio* bio,
 
 
 
-static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block) {
+static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit) {
 
 	struct cacheblock *cache = dmc->cache;
 	unsigned int offset, head, tail;
@@ -1585,17 +1663,26 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	} else DPRINTK("Insert block %llu at empty frame %llu",
 		request_block, cache_block);
 
-    cache_read_miss(dmc, bio, cache_block);
+    cache_read_miss(dmc, bio, 0);
 
-	for(int i=0;i<dmc->ra->size;i++)
+    if(hit)
+    {
+    	request_block=cache[request_block].ra->start+cache[request_block].ra->size;
+
+    }
+
+	for(int i=0;i<cache[cache_block].ra->size;i++)
 	{
 
-		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i+1)%SEQ_CACHE_SIZE;
+
+		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
 
 		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
-		request_block=request_block+(i+1)*DEFAULT_BLOCK_SIZE;
+		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
 
-		cache_insert(dmc, request_block, cache_block); /* Update metadata first */
+       	
+
+ 	precache_insert(dmc, request_block, cache_block,i); /* Update metadata first */
 
 	job = new_kcached_job(dmc, bio, request_block, cache_block);
 
@@ -1738,8 +1825,8 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		    //thread_pool_schedule_private(n->pool,setup(),action(), void *data, long timeout, n);n为work对象
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
-		    	unsigned long on= ondemand_readahead(bio,cache[precache_block].ra,request_block); //给出预取大小，和预取的位置。开始预取。
-		    	precache_read_miss(dmc, bio, precache_block);
+		    	unsigned long on= ondemand_readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,1); //给出预取大小，和预取的位置。开始预取。
+		    	precache_read_miss(dmc, bio, precache_block,1);
 		    } 
 			return cache_hit(dmc, bio, cache_block);
 		}        
@@ -1748,10 +1835,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	else if (0 == res) /* Cache miss; replacement block is found */
 		{
 			    cache[precache_block].ra->hit_readahead_marker=0;
-		    	unsigned long on= ondemand_readahead(bio,cache[precache_block].ra,request_block); //给出预取大小，和预取的位置。开始预取。
-		    	precache_read_miss(dmc, bio, precache_block);
+		    	unsigned long on= ondemand_readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,0); //给出预取大小，和预取的位置。开始预取。
+		    	precache_read_miss(dmc, bio, precache_block,0);
 		   
-			return precache_read_miss(dmc, bio, cache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
+			return precache_read_miss(dmc, bio, precache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
 		}
 		
 	else if (2 == res) { /* Entire cache set is dirty; initiate a write-back */
