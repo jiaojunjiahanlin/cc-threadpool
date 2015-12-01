@@ -314,9 +314,9 @@ static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *ra
 
 
 
-	if (hit_readahead_marker > 1) {
+	if (hit_readahead_marker) {
 		
-
+        ra->start = request_block+DEFAULT_BLOCK_SIZE;
 		size = get_next_ra_size(ra, max);
 		async_size = ra->size;
 		goto readit;
@@ -324,11 +324,8 @@ static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *ra
 	}
 
 
-
-
-
 initial_readahead:
-	ra->start = request_block;
+	ra->start = request_block+DEFAULT_BLOCK_SIZE;
 	ra->size = get_init_ra_size(1, max);
 	ra->async_size = ra->size;
 
@@ -343,7 +340,7 @@ readit:
 		ra->size += ra->async_size;
 	}
 
-	return ra_submit(ra->start+ra->size,async_size);
+	return 1;
 }
 
 
@@ -1744,7 +1741,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		    //thread_pool_schedule_private(n->pool,setup(),action(), void *data, long timeout, n);n为work对象
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
-		    	unsigned long on= ondemand_readahead(bio,cache_block->ra,request_block); //给出预取大小，和预取的位置。开始预取。
+		    	unsigned long on= ondemand_readahead(bio,cache[precache_block].ra,request_block); //给出预取大小，和预取的位置。开始预取。
 		    	precache_miss(dmc, bio, precache_block);
 		    } 
 			return cache_hit(dmc, bio, cache_block);
@@ -1753,11 +1750,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		
 	else if (0 == res) /* Cache miss; replacement block is found */
 		{
-			if (cache[cache_block].ra->hit_readahead_marker>1)
-		    {
-		    	unsigned long on= ondemand_readahead(bio,cache_block->ra,request_block); //给出预取大小，和预取的位置。开始预取。
-		    	precache_miss(dmc, bio, cache_block);
-		    } 
+			    cache[precache_block].ra->hit_readahead_marker=0;
+		    	unsigned long on= ondemand_readahead(bio,cache[precache_block].ra,request_block); //给出预取大小，和预取的位置。开始预取。
+		    	precache_miss(dmc, bio, precache_block);
+		   
 			return precache_miss(dmc, bio, cache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
 		}
 		
