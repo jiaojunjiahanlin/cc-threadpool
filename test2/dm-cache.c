@@ -1195,7 +1195,7 @@ static int cache_lookup(struct cache_c *dmc, sector_t block,
 //预取的查找函数
 
 static int precache_lookup(struct cache_c *dmc, sector_t block,
-	                    sector_t *cache_block)
+	                    sector_t *cache_block,sector_t *precache_block)
 {
 	//cache_c结构体指针，block请求的扇区：请求的bio的扇区－扇区在块中的偏移。即是本块的起始扇区位置。cache_block，用于存放找到替换的或者命中的块的位置
 	unsigned long set_number = DEFAULT_CACHE_SIZE／DEFAULT_CACHE_ASSOC;//组号。
@@ -1213,14 +1213,19 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
 				if (cache[index].state, RESERVED)) {
-			if (cache[index].block.ra->hit_readahead_marker)
-				{
-					hit_readahead_marker++;
-				}
-				*cache_block = index; 
+
+					*cache_block = index; 
+					
 				/* Reset all counters if the largest one is going to overflow */
 				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 				cache[index].counter = ++dmc->counter;
+
+				if (cache[index].block.ra->hit_readahead_marker)
+						{
+							hit_readahead_marker++;
+							continue;
+						}
+				
 				break;
 			} else {
 				/* Don't consider blocks that are in the middle of copying */
@@ -1249,15 +1254,15 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	//函数返回2表示没有命中缓存并且没有分配缓存块，此时的cache_block指向经过LRU替换策略淘汰的脏缓存块，
 	//在这种情况下，函数返回后首先应该将脏数据写回磁盘。函数返回-1表示没有命中缓存并且没有缓存块可供分配，
 	//它发生在当请求映射到的集合内所有的块的状态都为RESERVED或WRITEBACK时。
-	res = i < cache_assoc ? 1 : 0;
+	res = i < SEQ_CACHE_SIZE ? 1 : 0;
 	if (!res) { /* Cache miss */
 		if (invalid != -1) /* Choose the first empty frame */
-			*cache_block = set_number * cache_assoc + invalid;
+			*precache_block = set_number * cache_assoc + invalid;
 		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
-			*cache_block = set_number * cache_assoc + oldest_clean;
+			*precache_block = set_number * cache_assoc + oldest_clean;
 		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
 			res = 2;
-			*cache_block = set_number * cache_assoc + oldest;
+			*precache_block = set_number * cache_assoc + oldest;
 		} else {
 			res = -1;
 		}
@@ -1714,7 +1719,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		      union map_info *map_context)
 {
 	struct cache_c *dmc = (struct cache_c *) ti->private; //获取target虚拟设备中的cache_c结构体指针。
-	sector_t request_block, cache_block = 0, offset;
+	sector_t request_block, cache_block = 0, precache_block,offset;
 	int res;
 	int prefetch;
 
@@ -1731,22 +1736,28 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	{
 		// 第一步，从顺序分区找替换地址。
 
-		res = precache_lookup(dmc, request_block, &cache_block);//查找是否命中，进入函数cache_lookup。
+		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);//查找是否命中，进入函数cache_lookup。
 		if (1 == res)
 		{
 			/* Cache hit; server request from cache */  
 			//只要命中，我就封装一个args扔给下面这个函数。
 		    //thread_pool_schedule_private(n->pool,setup(),action(), void *data, long timeout, n);n为work对象
-		    if (marker)
+		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
-		    	precache_miss();
-		    }
+		    	unsigned long on= ondemand_readahead(bio,cache_block->ra,request_block); //给出预取大小，和预取的位置。开始预取。
+		    	precache_miss(dmc, bio, precache_block);
+		    } 
 			return cache_hit(dmc, bio, cache_block);
 		}        
 		
 		
 	else if (0 == res) /* Cache miss; replacement block is found */
 		{
+			if (cache[cache_block].ra->hit_readahead_marker>1)
+		    {
+		    	unsigned long on= ondemand_readahead(bio,cache_block->ra,request_block); //给出预取大小，和预取的位置。开始预取。
+		    	precache_miss(dmc, bio, cache_block);
+		    } 
 			return precache_miss(dmc, bio, cache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
 		}
 		
@@ -1756,13 +1767,8 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		dmc->writeback++;
 
 		}
-
-		
-	    unsigned long on= ondemand_readahead(bio,cache_block->ra,request_block); //给出预取大小，和预取的位置。开始预取。
 	     
 	}
-
-
 
 	DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
 	        bio_rw(bio) == WRITE ? "WRITE" : (bio_rw(bio) == READ ?
