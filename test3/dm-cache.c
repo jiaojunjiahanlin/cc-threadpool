@@ -150,14 +150,14 @@ struct cacheblock {
 	unsigned short state;	/* State of a block */
 	unsigned long counter;	/* Logical timestamp of the block's last access */
 	struct bio_list bios;	/* List of pending bios */
-	struct file_ra_state *ra;
+	struct pre_ra_state *ra;
 };
 
 
 /*
  * Track a single file's readahead state
  */
-struct file_ra_state {
+struct pre_ra_state {
 	sector_t start;			
 	unsigned int size;		
 	unsigned int async_size;	
@@ -191,12 +191,12 @@ void seq_io_move_to_lruhead(struct cache_c *dmc, struct prefetch_queue *seqio);
 int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio);
 
 static int precache_lookup(struct cache_c *dmc, sector_t block,sector_t *cache_block,sector_t *precache_block);
-static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *prera,struct file_ra_state *nextra, sector_t request_block,int hit);
+static unsigned long ondemand_readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit);
 static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit);
 
 unsigned long max_sane_readahead(unsigned long nr);
 static unsigned long get_init_ra_size(unsigned long size, unsigned long max);
-static unsigned long get_next_ra_size(struct file_ra_state *ra,unsigned long max);
+static unsigned long get_next_ra_size(struct pre_ra_state *ra,unsigned long max);
 static int precache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block,int i);
 
 
@@ -1419,7 +1419,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		if (1 == res)
 		{
 			cache_hit(dmc, bio, cache_block);
-		    if (cache[cache_block]->ra->hit_readahead_marker)
+		    if (dmc->cache[cache_block]->ra->hit_readahead_marker)
 		    {
 		    	unsigned long on= ondemand_readahead(bio,cache[cache_block]->ra,cache[precache_block]->ra,request_block,1); 
 		    	return precache_read_miss(dmc, bio, precache_block,1);
@@ -1561,7 +1561,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 /*
  * A minimal readahead algorithm for trivial sequential/random reads.
  */
-static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *prera,struct file_ra_state *nextra, sector_t request_block,int hit)
+static unsigned long ondemand_readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit)
 {
 	unsigned long max = max_sane_readahead(1000);
 	int size;
@@ -1628,7 +1628,7 @@ static unsigned long get_init_ra_size(unsigned long size, unsigned long max)
  *  Get the previous window size, ramp it up, and
  *  return it as the new window size.
  */
-static unsigned long get_next_ra_size(struct file_ra_state *ra,
+static unsigned long get_next_ra_size(struct pre_ra_state *ra,
 						unsigned long max)
 {
 	unsigned long cur = ra->size;
