@@ -1644,6 +1644,28 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	return 0;
 }
 
+
+static int precache_insert(struct cache_c *dmc, sector_t block,
+	                    sector_t cache_block,int i)
+{
+	struct cacheblock *cache = dmc->cache;
+
+	/* Mark the block as RESERVED because although it is allocated, the data are
+       not in place until kcopyd finishes its job.
+	 */
+       if (i=0)
+       {
+       	cache[cache_block]->ra->hit_readahead_marker=1;
+
+       }
+	cache[cache_block].block = block;
+	cache[cache_block].state = RESERVED;
+	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
+	cache[cache_block].counter = ++dmc->counter;
+
+	return 1;
+}
+
 struct meta_dmc {
 	sector_t size;
 	unsigned int block_size;
@@ -1695,7 +1717,7 @@ static int load_metadata(struct cache_c *dmc) {
 	vfree((void *)meta_dmc);
 
 
-	order = dmc->size * sizeof(struct cacheblock);
+	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
 	       "sectors(%uKB), %s)",
@@ -1990,7 +2012,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
 
-	order = dmc->size * sizeof(struct cacheblock);
+	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
@@ -2010,7 +2032,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 init:	/* Initialize the cache structs */
-	for (i=0; i<dmc->size; i++) {
+	for (i=0; i< dmc->size+SEQ_CACHE_SIZE; i++) {
 		bio_list_init(&dmc->cache[i].bios);
 		if(!persistence) dmc->cache[i].state = 0;
 		dmc->cache[i].counter = 0;

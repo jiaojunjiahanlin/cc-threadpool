@@ -84,6 +84,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 unsigned long max_sane_readahead(unsigned long nr);
 static unsigned long get_init_ra_size(unsigned long size, unsigned long max);
 static unsigned long get_next_ra_size(struct file_ra_state *ra,unsigned long max);
+static int precache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block,int i);
 /*
  * To check the return value from dm_table_find_target().
  */
