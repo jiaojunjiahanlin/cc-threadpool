@@ -73,24 +73,7 @@ unsigned dm_get_md_type(struct mapped_device *md);
 
 int dm_setup_md_queue(struct mapped_device *md);
 
-void seq_io_remove_from_lru(struct cache_c *dmc, struct sequential_io *seqio);
-void seq_io_move_to_lruhead(struct cache_c *dmc, struct sequential_io *seqio);
-int skip_sequential_io(struct cache_c *dmc, struct bio *bio);
 
-static int precache_lookup(struct cache_c *dmc, sector_t block,sector_t *cache_block,sector_t *precache_block);
-static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *prera,struct file_ra_state *nextra, sector_t request_block,int hit);
-static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit);
-
-unsigned long max_sane_readahead(unsigned long nr);
-static unsigned long get_init_ra_size(unsigned long size, unsigned long max);
-static unsigned long get_next_ra_size(struct file_ra_state *ra,unsigned long max);
-static int precache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block,int i);
-
-
-static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
-	                   struct dm_io_region dest, struct cacheblock *cacheblock);
-static void precopy_callback(int read_err, unsigned int write_err, void *context);
-static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length);
 
 /*
  * To check the return value from dm_table_find_target().
