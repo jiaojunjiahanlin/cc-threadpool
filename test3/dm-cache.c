@@ -1615,6 +1615,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 
 		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
 		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
+		bio->bi_sector=request_block;
 
        	
 
@@ -1632,7 +1633,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 
 	job->nr_pages= 0;
 					
-	job->rw = write; /* Fetch data from the source device */
+	job->rw = READ; /* Fetch data from the source device */
 
 	DPRINTK("Queue job for %llu (need %u pages)",
 	        bio->bi_sector, job->nr_pages);
