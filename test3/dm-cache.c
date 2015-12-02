@@ -27,7 +27,6 @@
 #include <linux/blk_types.h>
 #include <linux/atomic.h>
 #include <asm/checksum.h>
-#include <asm/rwlock.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/list.h>
@@ -43,8 +42,6 @@
 #include <linux/dm-kcopyd.h>
 
 #define DMC_DEBUG 0
- #define PREMAX  128
- 
 
 #define DM_MSG_PREFIX "cache"
 #define DMC_PREFIX "dm-cache: "
@@ -58,6 +55,7 @@
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	65536
 #define SEQ_CACHE_SIZE	2048
+#define PREMAX  128
 #define DEFAULT_CACHE_ASSOC	1024
 #define DEFAULT_BLOCK_SIZE	8
 #define CONSECUTIVE_BLOCKS	512
@@ -118,7 +116,6 @@ struct cache_c {
 	unsigned long dirty;		/* Number of submitted dirty blocks */
 	unsigned long uncached_sequential_reads, uncached_sequential_writes;
 
-
 	/* Sequential I/O spotter */
 	struct prefetch_queue	seq_recent_ios[PREMAX];
 	struct prefetch_queue	*seq_io_head;
@@ -129,17 +126,36 @@ struct cache_c {
 	struct flashcache_stats flashcache_stats;
 };
 
-
-
 /* Cache block metadata structure */
 struct cacheblock {
-	//spinlock_t lock;	/* Lock to protect operations on the bio list */
-	rwlock_t lock;	/* rwLock to protect operations on the bio list */
+	spinlock_t lock;	/* Lock to protect operations on the bio list */
 	sector_t block;		/* Sector number of the cached block */
 	unsigned short state;	/* State of a block */
 	unsigned long counter;	/* Logical timestamp of the block's last access */
 	struct bio_list bios;	/* List of pending bios */
 	struct file_ra_state *ra;
+};
+
+/* Structure for a prefetch */
+struct prefetch_queue
+{
+    sector_t            most_recent_sector;
+	unsigned long       prefetch_length;
+	unsigned long       prefetch_num;
+	struct prefetch_queue    *prev, *next;
+
+}
+
+/*
+ * Track a single file's readahead state
+ */
+struct file_ra_state {
+	sector_t start;			
+	unsigned int size;		
+	unsigned int async_size;	
+    unsigned int offset;      
+	unsigned int ra_pages;				
+	int  hit_readahead_marker;
 };
 
 /* Structure for a kcached job */
@@ -160,77 +176,26 @@ struct kcached_job {
 	struct page_list *pages;
 };
 
-/* Structure for a prefetch */
-struct prefetch_queue
-{
-    sector_t            most_recent_sector;
-	unsigned long       prefetch_length;
-	unsigned long       prefetch_num;
-	struct prefetch_queue    *prev, *next;
-
-}
-    struct prefetch_queue    prefetch_max[pre_max];
-    struct prefetch_queue    *seq_io_head;
-    struct prefetch_queue    *seq_io_tail;
-
-struct prefetch_history
-{
-   
-	 sector_t            head_sector;
-	 unsigned long       prefetch_length;
-};
-
-//线程工作
-typedef struct worker
-{	
-	/* data */
-	void *(*process)(void *arg); //任务所要执行的函数，线程主体
-	void *arg; //参数
-	struct worker *next;
-}Thread_worker;
-
-typedef struct 
-{
-	/* data */
-	spin_lock queue_lock;
-	struct completion c;
-	Thread_worker *queue_head;
-	int shutdown; 
-	task_struct *tsk;
-	int max_thread_num;
-	int cur_queue_size;
-}Thread_pool;
-
 
 
 
 /****************************************************************************
- *  prefetch
+ *  prefetch is now
  ****************************************************************************/
-
 int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 {
-	struct prefetch_queue *seqio;
-	int sequential = 0;	/* Saw > 1 in a row? */
-	int prefetch       = 0;	/* Enough sequential to hit the threshold */
-
-	/* sysctl skip sequential threshold = 0 : disable, cache all sequential and random i/o.
-	 * This is the default. */	 
-	if (dmc->sysctl_skip_seq_thresh_kb == 0)
-		return 0;
-
-	/* Is it a continuation of recent i/o?  Try to find a match.  */
-	DPRINTK("skip_prefetch_queue: searching for %ld", bio->bi_sector);
-	/* search the list in LRU order so single sequential flow hits first slot */
-	VERIFY(spin_is_locked(&dmc->ioctl_lock));
-	for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
+   struct prefetch_queue *seqio;
+   int sequential = 0;	
+   int prefetch   = 0;	
+   VERIFY(spin_is_locked(&dmc->lock));
+   for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
 
 		if (bio->bi_sector == seqio->most_recent_sector) {
 			/* Reread or write same sector again.  Ignore but move to head */
 			DPRINTK("skip_prefetch_queue: repeat");
 			sequential = 1;
 			if (dmc->seq_io_head != seqio)
-				seq_io_move_to_lruhead(dmc, seqio);
+				seq_io_move_to_lruhead(dmc, seqio); 
 		}
 		/* i/o to one block more than the previous i/o = sequential */	
 		else if (bio->bi_sector == seqio->most_recent_sector + dmc->block_size) {
@@ -256,147 +221,57 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 	if (!sequential) {
 		/* Record the start of some new i/o, maybe we'll spot it as 
 		 * sequential soon.  */
-		DPRINTK("skip_sequential_io: concluded that its random i/o");
+		DPRINTK("skip_prefetch_queue: concluded that its random i/o");
 
 		seqio = dmc->seq_io_tail;
 		seq_io_move_to_lruhead(dmc, seqio);
 
-		DPRINTK("skip_sequential_io: fill in data");
+		DPRINTK("skip_prefetch_queue: fill in data");
 
 		/* Fill in data */
 		seqio->most_recent_sector = bio->bi_sector;
-		seqio->sequential_count	  = 1;
+		seqio->prefetch_length	  = 1;
 	}
-	DPRINTK("skip_sequential_io: complete.");
+	DPRINTK("skip_prefetch_queue: complete.");
 	if (skip) {
 		if (bio_data_dir(bio) == READ)
-	        	dmc->flashcache_stats.uncached_sequential_reads++;
+	        	dmc->uncached_sequential_reads++;
 		else 
-	        	dmc->flashcache_stats.uncached_sequential_writes++;
+	        	dmc->uncached_sequential_writes++;
 	}
 
 	return prefetch;
+
 }
 
 
-
-
-/*
- * Track a single file's readahead state
- */
-struct file_ra_state {
-	sector_t start;			/* hdd磁盘的块首地址*/
-	unsigned int size;		/* 预取的大小 */
-	unsigned int async_size;	/* do asynchronous readahead when there are only # of pages ahead */
-    unsigned int offset;      //第一个连续块进来后，初始化窗口,默认为0
-	unsigned int ra_pages;		/* 窗口最大值*/
-	unsigned int mmap_miss;		/* Cache miss stat for mmap accesses */
-	loff_t prev_pos;		/* Cache last read() position */
-	bool hit_readahead_marker; //读取预取的块命中，准备触发下一次预取的判断条件。
-};
-
-/*
- * A minimal readahead algorithm for trivial sequential/random reads.
- */
-static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *prera,struct file_ra_state *nextra, sector_t request_block,int hit)
+void seq_io_move_to_lruhead(struct cache_c *dmc, struct prefetch_queue *seqio)
 {
-	unsigned long max = max_sane_readahead(ra->ra_pages);
-	int size;
-	int async_size;
-
-	/*
-	 * start of file
-	 */
-	if (!hit)
-		goto initial_readahead;
-
-
-
-	if (prera->hit_readahead_marker) {
-		
-        nextra->start = prera->start+prera->size;
-		nextra->size = get_next_ra_size(prera, max);
-		nextra->async_size = ra->size;
-		goto readit;
-
-	}
-
-
-initial_readahead:
-	ra->start = request_block+DEFAULT_BLOCK_SIZE;
-	ra->size = get_init_ra_size(1, max);
-	ra->async_size = ra->size;
-
-readit:
-	/*
-	 * Will this read hit the readahead marker made by itself?
-	 * If so, trigger the readahead marker hit now, and merge
-	 * the resulted next readahead window into the current one.
-	 */
-
-
-	return 1;
+	if (likely(seqio->prev != NULL || seqio->next != NULL))
+		seq_io_remove_from_lru(dmc, seqio);
+	/* Add it to LRU head */
+	if (dmc->seq_io_head != NULL)
+		dmc->seq_io_head->prev = seqio;
+	seqio->next = dmc->seq_io_head;
+	seqio->prev = NULL;
+	dmc->seq_io_head = seqio;
 }
 
-
-
-static int prehitcache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block) {
-
-	struct cacheblock *cache = dmc->cache;
-	unsigned int offset, head, tail;
-	struct kcached_job *job;
-	struct kcached_job *prejob;
-	sector_t request_block, left;
-
-	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
-	request_block = bio->bi_sector - offset;   
-
-	if (cache[cache_block].state & VALID) {
-		DPRINTK("Replacing %llu->%llu",
-		        cache[cache_block].block, request_block);
-		dmc->replace++;
-	} else DPRINTK("Insert block %llu at empty frame %llu",
-		request_block, cache_block);
-
-	for(int i=0;i<dmc->ra->size;i++)
-	{
-
-
-		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
-
-		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
-		if(i=0)
-		{
-			
-		}
-		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
-
-		cache_insert(dmc, request_block, cache_block); /* Update metadata first */
-
-	job = new_kcached_job(dmc, bio, request_block, cache_block);
-
-	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; 
-	if (left < dmc->block_size) {         
-		tail = to_bytes(left) - bio->bi_size - head; 
-		job->src.count = left;    
-		job->dest.count = left;
-	} 
-
-
-	job->nr_pages= 0;
-					
-	job->rw = write; /* Fetch data from the source device */
-
-	DPRINTK("Queue job for %llu (need %u pages)",
-	        bio->bi_sector, job->nr_pages);
-	queue_job(job);
-
+void seq_io_remove_from_lru(struct cache_c *dmc, struct prefetch_queue *seqio)
+{
+	if (seqio->prev != NULL) 
+		seqio->prev->next = seqio->next;
+	else {
+		VERIFY(dmc->seq_io_head == seqio);
+		dmc->seq_io_head = seqio->next;
 	}
-
-	
-	return 0;
+	if (seqio->next != NULL)
+		seqio->next->prev = seqio->prev;
+	else {
+		VERIFY(dmc->seq_io_tail == seqio);
+		dmc->seq_io_tail = seqio->prev;
+	}
 }
-
 
 
 
@@ -880,21 +755,6 @@ static int do_io(struct kcached_job *job)
 	if (job->rw == READ) { /* Read from source device */
 		r = do_fetch(job);
 	} else { /* Write to cache device */
-		if(prefetch)
-		{
-			if(prefetch==1)
-			{
-				job->src.sector = request_block+block_size;
-			    r = do_store(job);
-			}
-			if(prefetch==2)
-			{
-				job->src.sector = request_block+2*block_size;
-			    r = do_store(job);
-			}
-
-			
-		}
 		r = do_store(job);
 	}
 
@@ -923,8 +783,7 @@ static void flush_bios(struct cacheblock *cacheblock)
 	struct bio *bio;
 	struct bio *n;
 
-	//spin_lock(&cacheblock->lock);
-	write_lock(&cacheblock->lock);
+	spin_lock(&cacheblock->lock);
 	bio = bio_list_get(&cacheblock->bios);
 	if (is_state(cacheblock->state, WRITEBACK)) { /* Write back finished */
 		cacheblock->state = VALID;
@@ -932,8 +791,7 @@ static void flush_bios(struct cacheblock *cacheblock)
 		set_state(cacheblock->state, VALID);
 		clear_state(cacheblock->state, RESERVED);
 	}
-	//spin_unlock(&cacheblock->lock);
-	write_unlock(&cacheblock->lock);
+	spin_unlock(&cacheblock->lock);
 
 	while (bio) {
 		n = bio->bi_next;
@@ -1100,20 +958,12 @@ static void write_back(struct cache_c *dmc, sector_t index, unsigned int length)
  * Map a block from the source device to a block in the cache device.
  */
 static unsigned long hash_block(struct cache_c *dmc, sector_t block)
-{//dmc和hdd磁盘的起始扇区号
+{
 	unsigned long set_number, value;
-//block_shift为3,consecutive_shift为9(2的3=8，2的9=512)，512肯定是扇区了，占了9位，那么8就是一块的扇区数，组在一起正好是4k的字节地址。
-	value = (unsigned long)(block >> (dmc->block_shift + dmc->consecutive_shift));
-	//对4k的块进行向右移动，是想找组号+块号的地址位。
+
+	value = (unsigned long)(block >> (dmc->block_shift +
+	        dmc->consecutive_shift));
 	set_number = hash_long(value, dmc->bits) / dmc->assoc;
-	//dmc->bits=16, 是从2的16次方＝64k的出来的。dmc->assoc=1024， hash_long函数是linux内核的散列函数，return value >> (64 - bits);
-	//假设一组是1024块，
-
-	//首先，hash的方式是，让key乘以一个大数，于是结果溢出，就把留在32/64位变量中的值作为hash值，又由于散列表的索引长度有限，
-	//我们就取这hash值的高几为作为索引值，之所以取高几位，是因为高位的数更具有随机性，能够减少所谓“冲突”。什么是冲突呢？从上面的算法来看，
-	//key和hash值并不是一一对应的。有可能两个key算出来得到同一个hash值，这就称为“冲突”。
-
-	//结论就是1024路组关联映射。
 
  	return set_number;
 }
@@ -1124,7 +974,6 @@ static unsigned long hash_block(struct cache_c *dmc, sector_t block)
  * rareness of this event, it might be more efficient that other more complex
  * schemes. TODO: a more elegant solution.
  */
- //这个地方可以优化
 static void cache_reset_counter(struct cache_c *dmc)
 {
 	sector_t i;
@@ -1142,49 +991,36 @@ static void cache_reset_counter(struct cache_c *dmc)
  *
  * Return value:
  *  1: cache hit (cache_block stores the index of the matched block)
- *  cache命中，cache块中有匹配的块索引
- *  0: cache miss but frame is allocated for insertion; cache_block stores the frame's index:
- *      cache 没命中，但是函数可以分配插入，cache块仓库有这个块的索引。
+ *  0: cache miss but frame is allocated for insertion; cache_block stores the
+ *     frame's index:
  *      If there are empty frames, then the first encounted is used.
- *      如果，这里有空的位置可以放入，那么第一个遇到的块将会被使用。
  *      If there are clean frames, then the LRU clean block is replaced.
- *      如果这里没有空的位置，但是有干净的位置，那么执行lru算法来替换掉干净的块。
- *  2: cache miss and frame is not allocated; cache_block stores the LRU dirty block's index:
- *      缓存没有命中，并且没有空间可以分配，缓存中储存的都是脏块的索引。
+ *  2: cache miss and frame is not allocated; cache_block stores the LRU dirty
+ *     block's index:
  *      This happens when the entire set is dirty.
- *      这种情况只发生在整个组中全是脏块的情况下。
  * -1: cache miss and no room for insertion:
- *      缓存没命中并且没有空间做替换。
  *      This happens when the entire set in transition modes (RESERVED or
  *      WRITEBACK).
- *      这种情况发生在当整个组都在保留或者写会的状态。这里还没发现一个组到底有多少个块（4k）
  *
  */
 static int cache_lookup(struct cache_c *dmc, sector_t block,
 	                    sector_t *cache_block)
 {
-	//cache_c结构体指针，block请求的扇区：请求的bio的扇区－扇区在块中的偏移。即是本块的起始扇区位置。cache_block，用于存放找到替换的或者命中的块的位置
-	unsigned long set_number = hash_block(dmc, block);//组号。
+	unsigned long set_number = hash_block(dmc, block);
 	sector_t index;
 	int i, res;
-	unsigned int cache_assoc = dmc->assoc; //定义缓存的组数为dmc的路数。
-	struct cacheblock *cache = dmc->cache; //定义cacheblock结构体指针，cache。
+	unsigned int cache_assoc = dmc->assoc;
+	struct cacheblock *cache = dmc->cache;
 	int invalid = -1, oldest = -1, oldest_clean = -1;
 	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
 
-	index=set_number * cache_assoc; //组号＊组内路数＝索引（是请求到的组第一块的扇区号）
-//is_state是用来将x&y，其含义是：INVALID 0 VALID 1	RESERVED 2	DIRTY 4	 WRITEBACK	8	
-//注:dm-cache缓存块的几种状态
-//有效块(valid):与原磁盘数据块一致；
-//保留块(reserved):该缓存块已分配，但尚未写入数据；
-//脏块(dirty):脏数据块是相对于原数据块而言的，是指被修改过的，与原数据不一致的数据块；
-//无效块(invalid):该缓存块上数据已失效；
-//写回块(writeback):该缓存块上的数据正被写回原磁盘；
+	index=set_number * cache_assoc;
+
 	for (i=0; i<cache_assoc; i++, index++) {
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
-				*cache_block = index; //都是用的块地址
+				*cache_block = index;
 				/* Reset all counters if the largest one is going to overflow */
 				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 				cache[index].counter = ++dmc->counter;
@@ -1194,96 +1030,9 @@ static int cache_lookup(struct cache_c *dmc, sector_t block,
 				if (!is_state(cache[index].state, RESERVED) &&
 				    !is_state(cache[index].state, WRITEBACK)) {
 					if (!is_state(cache[index].state, DIRTY) &&
-					    cache[index].counter < clean_counter) { //寻找干净块，并且干净块的时间最久没使用的块。
-						clean_counter = cache[index].counter;  
-						oldest_clean = i;   //oldest_clean的含义就是时间久的块但是又同时是干净的块。
-					}
-					if (cache[index].counter < counter) {
-						counter = cache[index].counter;
-						oldest = i; //寻找脏块中时间最久的块。先写回，再替换。
-					}
-				}
-			}
-		} else {
-			//因为空块是没有任何标记的，所以这个就是第一块空块的位置。
-			if (-1 == invalid) invalid = i;
-		}
-	}
-//res返回的值包括：0，2，－1
-	//cache_lookup函数包含3个参数，其中dmc为指向表示dm_cache结构的指针，block为请求在原磁盘上的起始扇区。函数返回1表示命中缓存，
-	//cache_block指向请求扇区映射后所对应的缓存块。函数返回0表示不命中但是仍然分配了缓存块，并且当存在空的缓存块时，
-	//cache_block指向遇到的第一个空的缓存块。否则，如果存在干净的缓存块，则cache_block指向根据LRU替换策略进行替换后的缓存块。
-	//函数返回2表示没有命中缓存并且没有分配缓存块，此时的cache_block指向经过LRU替换策略淘汰的脏缓存块，
-	//在这种情况下，函数返回后首先应该将脏数据写回磁盘。函数返回-1表示没有命中缓存并且没有缓存块可供分配，
-	//它发生在当请求映射到的集合内所有的块的状态都为RESERVED或WRITEBACK时。
-	res = i < cache_assoc ? 1 : 0;
-	if (!res) { /* Cache miss */
-		if (invalid != -1) /* Choose the first empty frame */
-			*cache_block = set_number * cache_assoc + invalid;
-		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
-			*cache_block = set_number * cache_assoc + oldest_clean;
-		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
-			res = 2;
-			*cache_block = set_number * cache_assoc + oldest;
-		} else {
-			res = -1;
-		}
-	}
-
-	if (-1 == res)
-		DPRINTK("Cache lookup: Block %llu(%lu):%s",
-	            block, set_number, "NO ROOM");
-	else
-		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
-		        block, set_number, *cache_block,
-		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
-	return res;
-}
-
-
-//预取的查找函数
-
-static int precache_lookup(struct cache_c *dmc, sector_t block,
-	                    sector_t *cache_block,sector_t *precache_block)
-{
-	//cache_c结构体指针，block请求的扇区：请求的bio的扇区－扇区在块中的偏移。即是本块的起始扇区位置。cache_block，用于存放找到替换的或者命中的块的位置
-	unsigned long set_number = DEFAULT_CACHE_SIZE／DEFAULT_CACHE_ASSOC;//组号。
-	sector_t index;
-	int i, res;
-	unsigned int cache_assoc = dmc->assoc; //定义缓存的组数为dmc的路数。
-	struct cacheblock *cache = dmc->cache; //定义cacheblock结构体指针，cache。
-	int invalid = -1, oldest = -1, oldest_clean = -1;
-	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
-
-	index=set_number * cache_assoc; 
-
-	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
-		if (is_state(cache[index].state, VALID) ||
-		    is_state(cache[index].state, RESERVED)) {
-			if (cache[index].block == block) {
-				if (cache[index].state, RESERVED)) {
-
-					*cache_block = index; 
-					
-				/* Reset all counters if the largest one is going to overflow */
-				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
-				cache[index].counter = ++dmc->counter;
-
-				if (cache[index].block.ra->hit_readahead_marker)
-						{
-							hit_readahead_marker++;
-							continue;
-						}
-				
-				break;
-			} else {
-				/* Don't consider blocks that are in the middle of copying */
-				if (!is_state(cache[index].state, RESERVED) &&
-				    !is_state(cache[index].state, WRITEBACK)) {
-					if (!is_state(cache[index].state, DIRTY) &&
-					    cache[index].counter < clean_counter) { 
-						clean_counter = cache[index].counter;  
-						oldest_clean = i; 
+					    cache[index].counter < clean_counter) {
+						clean_counter = cache[index].counter;
+						oldest_clean = i;
 					}
 					if (cache[index].counter < counter) {
 						counter = cache[index].counter;
@@ -1292,79 +1041,6 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 				}
 			}
 		} else {
-			//因为空块是没有任何标记的，所以这个就是第一块空块的位置。
-			if (-1 == invalid) invalid = i;
-		}
-	}
-//res返回的值包括：0，2，－1
-	//cache_lookup函数包含3个参数，其中dmc为指向表示dm_cache结构的指针，block为请求在原磁盘上的起始扇区。函数返回1表示命中缓存，
-	//cache_block指向请求扇区映射后所对应的缓存块。函数返回0表示不命中但是仍然分配了缓存块，并且当存在空的缓存块时，
-	//cache_block指向遇到的第一个空的缓存块。否则，如果存在干净的缓存块，则cache_block指向根据LRU替换策略进行替换后的缓存块。
-	//函数返回2表示没有命中缓存并且没有分配缓存块，此时的cache_block指向经过LRU替换策略淘汰的脏缓存块，
-	//在这种情况下，函数返回后首先应该将脏数据写回磁盘。函数返回-1表示没有命中缓存并且没有缓存块可供分配，
-	//它发生在当请求映射到的集合内所有的块的状态都为RESERVED或WRITEBACK时。
-	res = i < SEQ_CACHE_SIZE ? 1 : 0;
-	if (!res) { /* Cache miss */
-		if (invalid != -1) /* Choose the first empty frame */
-			*precache_block = set_number * cache_assoc + invalid;
-		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
-			*precache_block = set_number * cache_assoc + oldest_clean;
-		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
-			res = 2;
-			*precache_block = set_number * cache_assoc + oldest;
-		} else {
-			res = -1;
-		}
-	}
-
-	if (-1 == res)
-		DPRINTK("Cache lookup: Block %llu(%lu):%s",
-	            block, set_number, "NO ROOM");
-	else
-		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
-		        block, set_number, *cache_block,
-		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
-	return res;
-}
-
-static int cache_prelookup(struct cache_c *dmc, sector_t block, sector_t *cache_block)
-{
-	unsigned long set_number = hash_block(dmc, block);
-	sector_t index;
-	int i, res;
-	unsigned int cache_assoc = dmc->assoc; 
-	struct cacheblock *cache = dmc->cache; 
-	int invalid = -1, oldest = -1, oldest_clean = -1;
-	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
-
-	index=set_number * cache_assoc; 
-
-	for (i=0; i<cache_assoc; i++, index++) {
-		if (is_state(cache[index].state, VALID) ||
-		    is_state(cache[index].state, RESERVED)) {
-			if (cache[index].block == block) {
-				*cache_block = index; 
-				/* Reset all counters if the largest one is going to overflow */
-				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
-				cache[index].counter = ++dmc->counter;
-				break;
-			} else {
-				/* Don't consider blocks that are in the middle of copying */
-				if (!is_state(cache[index].state, RESERVED) &&
-				    !is_state(cache[index].state, WRITEBACK)) {
-					if (!is_state(cache[index].state, DIRTY) &&
-					    cache[index].counter < clean_counter) { //寻找干净块，并且干净块的时间最久没使用的块。
-						clean_counter = cache[index].counter;  
-						oldest_clean = i;   //oldest_clean的含义就是时间久的块但是又同时是干净的块。
-					}
-					if (cache[index].counter < counter) {
-						counter = cache[index].counter;
-						oldest = i; //寻找脏块中时间最久的块。先写回，再替换。
-					}
-				}
-			}
-		} else {
-			//因为空块是没有任何标记的，所以这个就是第一块空块的位置。
 			if (-1 == invalid) invalid = i;
 		}
 	}
@@ -1391,25 +1067,6 @@ static int cache_prelookup(struct cache_c *dmc, sector_t block, sector_t *cache_
 		        block, set_number, *cache_block,
 		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
 	return res;
-
-}
-
-static int cache_prereplace(struct cache_c *dmc, sector_t block, sector_t *cache_block)
-{
-if (!is_state(cache[index].state, RESERVED) &&
-				    !is_state(cache[index].state, WRITEBACK)) {
-					if (!is_state(cache[index].state, DIRTY) &&
-					    cache[index].counter < clean_counter) { //寻找干净块，并且干净块的时间最久没使用的块。
-						clean_counter = cache[index].counter;  
-						oldest_clean = i;   //oldest_clean的含义就是时间久的块但是又同时是干净的块。
-					}
-					if (cache[index].counter < counter) {
-						counter = cache[index].counter;
-						oldest = i; //寻找脏块中时间最久的块。先写回，再替换。
-					}
-				}
-				return 1;
-
 }
 
 /*
@@ -1423,28 +1080,6 @@ static int cache_insert(struct cache_c *dmc, sector_t block,
 	/* Mark the block as RESERVED because although it is allocated, the data are
        not in place until kcopyd finishes its job.
 	 */
-	cache[cache_block].block = block;
-	cache[cache_block].state = RESERVED;
-	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
-	cache[cache_block].counter = ++dmc->counter;
-
-	return 1;
-}
-
-
-static int precache_insert(struct cache_c *dmc, sector_t block,
-	                    sector_t cache_block,int i)
-{
-	struct cacheblock *cache = dmc->cache;
-
-	/* Mark the block as RESERVED because although it is allocated, the data are
-       not in place until kcopyd finishes its job.
-	 */
-       if (i=0)
-       {
-       	cache[cache_block].ra->hit_readahead_marker=1;
-
-       }
 	cache[cache_block].block = block;
 	cache[cache_block].state = RESERVED;
 	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
@@ -1484,12 +1119,10 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 		bio->bi_bdev = dmc->cache_dev->bdev;
 		bio->bi_sector = (cache_block << dmc->block_shift)  + offset;
 
-		//spin_lock(&cache[cache_block].lock);
-		read_lock(&cache[cache_block].lock);
+		spin_lock(&cache[cache_block].lock);
 
 		if (is_state(cache[cache_block].state, VALID)) { /* Valid cache block */
-			//spin_unlock(&cache[cache_block].lock);
-		    read_unlock(&cache[cache_block].lock);
+			spin_unlock(&cache[cache_block].lock);
 			return 1;
 		}
 
@@ -1498,8 +1131,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 				dmc->cache_dev->name, bio->bi_sector);
 		bio_list_add(&cache[cache_block].bios, bio);
 
-		//spin_unlock(&cache[cache_block].lock);
-		 read_unlock(&cache[cache_block].lock);
+		spin_unlock(&cache[cache_block].lock);
 		return 0;
 	} else { /* WRITE hit */
 		if (dmc->write_policy == WRITE_THROUGH) { /* Invalidate cached data */
@@ -1514,8 +1146,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 			dmc->dirty_blocks++;
 		}
 
-		//spin_lock(&cache[cache_block].lock);
-		write_lock(&cache[cache_block].lock);
+		spin_lock(&cache[cache_block].lock);
 
  		/* In the middle of write back */
 		if (is_state(cache[cache_block].state, WRITEBACK)) {
@@ -1524,8 +1155,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 			DPRINTK("Add to bio list %s(%llu)",
 					dmc->src_dev->name, bio->bi_sector);
 			bio_list_add(&cache[cache_block].bios, bio);
-			//spin_unlock(&cache[cache_block].lock);
-			write_unlock(&cache[cache_block].lock);
+			spin_unlock(&cache[cache_block].lock);
 			return 0;
 		}
 
@@ -1536,8 +1166,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 			DPRINTK("Add to bio list %s(%llu)",
 					dmc->cache_dev->name, bio->bi_sector);
 			bio_list_add(&cache[cache_block].bios, bio);
-			//spin_unlock(&cache[cache_block].lock);
-			write_unlock(&cache[cache_block].lock);
+			spin_unlock(&cache[cache_block].lock);
 			return 0;
 		}
 
@@ -1545,8 +1174,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 		bio->bi_bdev = dmc->cache_dev->bdev;
 		bio->bi_sector = (cache_block << dmc->block_shift) + offset;
 
-		//spin_unlock(&cache[cache_block].lock);
-		write_unlock(&cache[cache_block].lock);
+		spin_unlock(&cache[cache_block].lock);
 		return 1;
 	}
 }
@@ -1585,11 +1213,10 @@ static int cache_read_miss(struct cache_c *dmc, struct bio* bio,
 	struct cacheblock *cache = dmc->cache;
 	unsigned int offset, head, tail;
 	struct kcached_job *job;
-	struct kcached_job *prejob;
 	sector_t request_block, left;
 
-	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);/* 计算bio的请求扇区的起始地址跟完整的4k（也就是8）的模，然后算出在4k中的偏移扇区数 */
-	request_block = bio->bi_sector - offset;   /*算出磁盘hdd的起始块地址的扇区地址*/
+	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
+	request_block = bio->bi_sector - offset;
 
 	if (cache[cache_block].state & VALID) {
 		DPRINTK("Replacing %llu->%llu",
@@ -1602,34 +1229,21 @@ static int cache_read_miss(struct cache_c *dmc, struct bio* bio,
 
 	job = new_kcached_job(dmc, bio, request_block, cache_block);
 
+	head = to_bytes(offset);
 
-	head = to_bytes(offset); /*块的起始地址到bio请求扇区的字节数*/
-
-	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; /*算出磁盘末尾到请求的块首地址的扇区数*/
-	if (left < dmc->block_size) {          /*如果剩下的还没有一个块（8个扇区大）*/
-		tail = to_bytes(left) - bio->bi_size - head;    /*那么算出省下距离磁盘尾部出去head和biosize还有多少（其实这个tail好想没有什么用呀），下面else的那个才有用*/
-		job->src.count = left;    /*因为剩下的已经不够一个4k块的大小了，所以整个都要传过去的*/
+	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block;
+	if (left < dmc->block_size) {
+		tail = to_bytes(left) - bio->bi_size - head;
+		job->src.count = left;
 		job->dest.count = left;
 	} else
-		tail = to_bytes(dmc->block_size) - bio->bi_size - head; 
-		/*如果剩下的地址很大，那么我就算算4k的块能不能放下这个bio的请求的的东西（请求要算上整个4k的跨度，如果超出了上一个4k,那么还得再有一个4k的请求）*/
+		tail = to_bytes(dmc->block_size) - bio->bi_size - head;
 
 	/* Requested block is aligned with a cache block */
-	if (0 == head && 0 == tail) /*如果请求的正好是4k的大小，那么我就*/
-		{
-			job->nr_pages= 0;
-			
-			
-		}
-		
-	else /* Need new pages to store extra data 否则我就要另外分配了*/
-		{
-			job->nr_pages = dm_div_up(head, PAGE_SIZE) + dm_div_up(tail, PAGE_SIZE); /*划分为两个任务来执行，这里都是字节的运算传递*/
-
-		}
-
-
-		
+	if (0 == head && 0 == tail)
+		job->nr_pages= 0;
+	else /* Need new pages to store extra data */
+		job->nr_pages = dm_div_up(head, PAGE_SIZE) + dm_div_up(tail, PAGE_SIZE);
 	job->rw = READ; /* Fetch data from the source device */
 
 	DPRINTK("Queue job for %llu (need %u pages)",
@@ -1638,74 +1252,6 @@ static int cache_read_miss(struct cache_c *dmc, struct bio* bio,
 
 	return 0;
 }
-
-
-
-static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit) {
-
-	struct cacheblock *cache = dmc->cache;
-	unsigned int offset, head, tail;
-	struct kcached_job *job;
-	struct kcached_job *prejob;
-	sector_t request_block, left;
-
-	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
-	request_block = bio->bi_sector - offset;   
-
-	if (cache[cache_block].state & VALID) {
-		DPRINTK("Replacing %llu->%llu",
-		        cache[cache_block].block, request_block);
-		dmc->replace++;
-	} else DPRINTK("Insert block %llu at empty frame %llu",
-		request_block, cache_block);
-
-    cache_read_miss(dmc, bio, 0);
-
-    if(hit)
-    {
-    	request_block=cache[request_block].ra->start+cache[request_block].ra->size;
-
-    }
-
-	for(int i=0;i<cache[cache_block].ra->size;i++)
-	{
-
-
-		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
-
-		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
-		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
-
-       	
-
- 	precache_insert(dmc, request_block, cache_block,i); /* Update metadata first */
-
-	job = new_kcached_job(dmc, bio, request_block, cache_block);
-
-	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; 
-	if (left < dmc->block_size) {         
-		tail = to_bytes(left) - bio->bi_size - head; 
-		job->src.count = left;    
-		job->dest.count = left;
-	} 
-
-
-	job->nr_pages= 0;
-					
-	job->rw = write; /* Fetch data from the source device */
-
-	DPRINTK("Queue job for %llu (need %u pages)",
-	        bio->bi_sector, job->nr_pages);
-	queue_job(job);
-
-	}
-
-	
-	return 0;
-}
-
-
-
 
 /*
  * Handle a write cache miss:
@@ -1788,56 +1334,48 @@ static int cache_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block
 
 /*
  * Decide the mapping and perform necessary cache operations for a bio request.
- ＊dm_target是linux的一个数据结构，主要是用来指定你的虚拟磁盘的结构的。
- ＊bio是block io，是最原始的bio请求。
- ＊mapinfo也是内核的一个结构，以后再详述。
  */
 static int cache_map(struct dm_target *ti, struct bio *bio,
 		      union map_info *map_context)
 {
-	struct cache_c *dmc = (struct cache_c *) ti->private; //获取target虚拟设备中的cache_c结构体指针。
-	sector_t request_block, cache_block = 0, precache_block=0,offset;
+	struct cache_c *dmc = (struct cache_c *) ti->private;
+	sector_t request_block, cache_block = 0,precache_block=0, offset;
 	int res;
-	int prefetch;
+	int prefetch =0;
 
 	offset = bio->bi_sector & dmc->block_mask;
-	//block_mask的大小是7，0111&1000=0000（7&8）=0；看来一块确实是字4k。因为一个扇区512字节，8个扇区就是4k。
-	request_block = bio->bi_sector - offset; //请求的扇区是：请求的bio的扇区－扇区在块中的偏移。即是本块的启示扇区位置。
+	request_block = bio->bi_sector - offset;
 
 	if (bio_data_dir(bio) == READ)
 	{
 		prefetch=skip_prefetch_queue(dmc, bio);
 	}
-	
+
 	if (prefetch)
 	{
-		// 第一步，从顺序分区找替换地址。
 
-		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);//查找是否命中，进入函数cache_lookup。
+		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
-			/* Cache hit; server request from cache */  
-			//只要命中，我就封装一个args扔给下面这个函数。
-		    //thread_pool_schedule_private(n->pool,setup(),action(), void *data, long timeout, n);n为work对象
-		    if (cache[cache_block].ra->hit_readahead_marker)
+			cache_hit(dmc, bio, cache_block);
+		    if (cache[cache_block]->ra->hit_readahead_marker)
 		    {
-		    	unsigned long on= ondemand_readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,1); //给出预取大小，和预取的位置。开始预取。
-		    	precache_read_miss(dmc, bio, precache_block,1);
+		    	unsigned long on= ondemand_readahead(bio,cache[cache_block]->ra,cache[precache_block]->ra,request_block,1); 
+		    	return precache_read_miss(dmc, bio, precache_block,1);
 		    } 
-			return cache_hit(dmc, bio, cache_block);
+			return 1;
 		}        
 		
 		
-	else if (0 == res) /* Cache miss; replacement block is found */
+	else if (0 == res) 
 		{
-			    cache[precache_block].ra->hit_readahead_marker=0;
-		    	unsigned long on= ondemand_readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,0); //给出预取大小，和预取的位置。开始预取。
-		    	precache_read_miss(dmc, bio, precache_block,0);
+			cache[precache_block]->ra->hit_readahead_marker=0;
+		    unsigned long on= ondemand_readahead(bio,cache[cache_block]->ra,cache[precache_block]->ra,request_block,0); 
 		   
-			return precache_read_miss(dmc, bio, precache_block); //为了避免麻烦，只要是miss了，就初始化形式的预取一次。也就是两块。
+			return precache_read_miss(dmc, bio, precache_block); 
 		}
 		
-	else if (2 == res) { /* Entire cache set is dirty; initiate a write-back */
+	else if (2 == res) { 
 
 		write_back(dmc, cache_block, 1);
 		dmc->writeback++;
@@ -1851,14 +1389,12 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	        "READ":"READA"), bio->bi_sector, request_block, offset,
 	        bio->bi_size);
 
-	if (bio_data_dir(bio) == READ) dmc->reads++;//计数器，记录读和写的次数，方便后来统计或者什么的，先往下读。回头详述。
+	if (bio_data_dir(bio) == READ) dmc->reads++;
 	else dmc->writes++;
 
-	res = cache_lookup(dmc, request_block, &cache_block);//查找是否命中，进入函数cache_lookup。
-	if (1 == res)  /* Cache hit; server request from cache */        
+	res = cache_lookup(dmc, request_block, &cache_block);
+	if (1 == res)  /* Cache hit; server request from cache */
 		return cache_hit(dmc, bio, cache_block);
-		//只要命中，我就封装一个args扔给下面这个函数。
-		//  thread_pool_schedule_private(n->pool,setup(),action(), void *data, long timeout, n);n为work对象
 	else if (0 == res) /* Cache miss; replacement block is found */
 		return cache_miss(dmc, bio, cache_block);
 	else if (2 == res) { /* Entire cache set is dirty; initiate a write-back */
@@ -1872,101 +1408,167 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	return 1;
 }
 
+/****************************************************************************
+ *  Functions for precache
+ ****************************************************************************/
 
-struct prefetch_queue {
- 	sector_t 	        most_recent_sector;
-	unsigned long		prefetch_length;
-	struct prefetch_queue 	*prev, *next;
-};
-
-int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
+static int precache_lookup(struct cache_c *dmc, sector_t block,
+	                    sector_t *cache_block,sector_t *precache_block)
 {
-   struct prefetch_queue *seqio;
-   int sequential = 0;	
-   int prefetch       = 0;	
-   VERIFY(spin_is_locked(&dmc->lock));
-   for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
+	unsigned long set_number = DEFAULT_CACHE_SIZE／DEFAULT_CACHE_ASSOC;
+	sector_t index;
+	int i, res;
+	unsigned int cache_assoc = dmc->assoc;
+	struct cacheblock *cache = dmc->cache;
+	int invalid = -1, oldest = -1, oldest_clean = -1;
+	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
 
-		if (bio->bi_sector == seqio->most_recent_sector) {
-			/* Reread or write same sector again.  Ignore but move to head */
-			DPRINTK("skip_prefetch_queue: repeat");
-			sequential = 1;
-			if (dmc->seq_io_head != seqio)
-				seq_io_move_to_lruhead(dmc, seqio); 
-		}
-		/* i/o to one block more than the previous i/o = sequential */	
-		else if (bio->bi_sector == seqio->most_recent_sector + dmc->block_size) {
-			DPRINTK("skip_prefetch_queue: sequential found");
-			/* Update stats.  */
-			seqio->most_recent_sector = bio->bi_sector;
-			seqio->prefetch_length++;
-			sequential = 1;
+	index=set_number * cache_assoc;
 
-			/* And move to head, if not head already */
-			if (dmc->seq_io_head != seqio)
-				seq_io_move_to_lruhead(dmc, seqio);
+	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
+		if (is_state(cache[index].state, VALID) ||
+		    is_state(cache[index].state, RESERVED)) {
+			if (cache[index].block == block) {
+				if (cache[index].state, RESERVED)) {
+					*cache_block = index; 
 
-			/* Is it now sequential enough to be sure? (threshold expressed in kb) */
-			if (to_bytes(seqio->prefetch_length * dmc->block_size) > dmc->sysctl_skip_seq_thresh_kb * 1024) {
-				DPRINTK("skip_prefetch_queue: Sequential i/o detected, seq count now %lu", 
-					seqio->prefetch_length);
-				/* Sufficiently sequential */
-				prefetch = 1;
+				/* Reset all counters if the largest one is going to overflow */
+				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
+				cache[index].counter = ++dmc->counter;
+
+				if (cache[index].block->ra.hit_readahead_marker)
+						{
+							continue;
+						}
+				break;
+			} else {
+				/* Don't consider blocks that are in the middle of copying */
+				if (!is_state(cache[index].state, RESERVED) &&
+				    !is_state(cache[index].state, WRITEBACK)) {
+					if (!is_state(cache[index].state, DIRTY) &&
+					    cache[index].counter < clean_counter) { 
+						clean_counter = cache[index].counter;  
+						oldest_clean = i; 
+					}
+					if (cache[index].counter < counter) {
+						counter = cache[index].counter;
+						oldest = i;
+					}
+				}
 			}
+		} else {
+			if (-1 == invalid) invalid = i;
 		}
 	}
-	if (!sequential) {
-		/* Record the start of some new i/o, maybe we'll spot it as 
-		 * sequential soon.  */
-		DPRINTK("skip_prefetch_queue: concluded that its random i/o");
 
-		seqio = dmc->seq_io_tail;
-		seq_io_move_to_lruhead(dmc, seqio);
-
-		DPRINTK("skip_prefetch_queue: fill in data");
-
-		/* Fill in data */
-		seqio->most_recent_sector = bio->bi_sector;
-		seqio->prefetch_length	  = 1;
-	}
-	DPRINTK("skip_prefetch_queue: complete.");
-	if (skip) {
-		if (bio_data_dir(bio) == READ)
-	        	dmc->uncached_sequential_reads++;
-		else 
-	        	dmc->uncached_sequential_writes++;
+	res = i < SEQ_CACHE_SIZE ? 1 : 0;
+	if (!res) { /* Cache miss */
+		if (invalid != -1) /* Choose the first empty frame */
+			*precache_block = set_number * cache_assoc + invalid;
+		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
+			*precache_block = set_number * cache_assoc + oldest_clean;
+		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
+			res = 2;
+			*precache_block = set_number * cache_assoc + oldest;
+		} else {
+			res = -1;
+		}
 	}
 
-	return prefetch;
-
+	if (-1 == res)
+		DPRINTK("Cache lookup: Block %llu(%lu):%s",
+	            block, set_number, "NO ROOM");
+	else
+		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
+		        block, set_number, *cache_block,
+		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
+	return res;
 }
 
-void seq_io_move_to_lruhead(struct cache_c *dmc, struct prefetch_queue *seqio)
+
+
+/*
+ * A minimal readahead algorithm for trivial sequential/random reads.
+ */
+static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *prera,struct file_ra_state *nextra, sector_t request_block,int hit)
 {
-	if (likely(seqio->prev != NULL || seqio->next != NULL))
-		seq_io_remove_from_lru(dmc, seqio);
-	/* Add it to LRU head */
-	if (dmc->seq_io_head != NULL)
-		dmc->seq_io_head->prev = seqio;
-	seqio->next = dmc->seq_io_head;
-	seqio->prev = NULL;
-	dmc->seq_io_head = seqio;
+	unsigned long max = max_sane_readahead(1000);
+	int size;
+	int async_size;
+
+	/*
+	 * start of file
+	 */
+	if (!hit)
+		goto initial_readahead;
+
+	if (prera->hit_readahead_marker) {
+		
+        nextra->start = prera->start+prera->size;
+		nextra->size = get_next_ra_size(prera, max);
+		nextra->async_size = ra->size;
+		goto readit;
+
+	}
+
+
+initial_readahead:
+	ra->start = request_block+DEFAULT_BLOCK_SIZE;
+	ra->size = get_init_ra_size(1, max);
+	ra->async_size = ra->size;
+
+readit:
+		DPRINTK("Cache lookup: Block %s", "hit_readahead_marker and the window is now");
+
+    return 1;
 }
 
-void seq_io_remove_from_lru(struct cache_c *dmc, struct prefetch_queue *seqio)
+/*
+ * Given a desired number of PAGE_CACHE_SIZE readahead pages, return a
+ * sensible upper limit.
+ */
+unsigned long max_sane_readahead(unsigned long nr)
 {
-	if (seqio->prev != NULL) 
-		seqio->prev->next = seqio->next;
-	else {
-		VERIFY(dmc->seq_io_head == seqio);
-		dmc->seq_io_head = seqio->next;
-	}
-	if (seqio->next != NULL)
-		seqio->next->prev = seqio->prev;
-	else {
-		VERIFY(dmc->seq_io_tail == seqio);
-		dmc->seq_io_tail = seqio->prev;
-	}
+	return min(nr, 128);
+}
+
+
+/*
+ * Set the initial window size, round to next power of 2 and square
+ * for small size, x 4 for medium, and x 2 for large
+ * for 128k (32 page) max ra
+ * 1-8 page = 32k initial, > 8 page = 128k initial
+ */
+static unsigned long get_init_ra_size(unsigned long size, unsigned long max)
+{
+	unsigned long newsize = roundup_pow_of_two(size);
+
+	if (newsize <= max / 32)
+		newsize = newsize * 4;
+	else if (newsize <= max / 4)
+		newsize = newsize * 2;
+	else
+		newsize = max;
+
+	return newsize;
+}
+
+/*
+ *  Get the previous window size, ramp it up, and
+ *  return it as the new window size.
+ */
+static unsigned long get_next_ra_size(struct file_ra_state *ra,
+						unsigned long max)
+{
+	unsigned long cur = ra->size;
+	unsigned long newsize;
+
+	if (cur < max / 16)
+		newsize = 4 * cur;
+	else
+		newsize = 2 * cur;
+
+	return min(newsize, max);
 }
 
 struct meta_dmc {
@@ -2003,11 +1605,11 @@ static int load_metadata(struct cache_c *dmc) {
 	        meta_dmc->chksum);
 
 	dmc->block_size = meta_dmc->block_size;
-	dmc->block_shift = ffs(dmc->block_size) - 1;//ffs是一个取一个数值的二进制的1的个数，例如64就是7-1，2的6次方。
+	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
 
 	dmc->size = meta_dmc->size;
-	dmc->bits = ffs(dmc->size) - 1;//dmc-size=65536,64k,那么ffs之后就是2的16次方。那么dmc->bits就是16
+	dmc->bits = ffs(dmc->size) - 1;
 
 	dmc->assoc = meta_dmc->assoc;
 	consecutive_blocks = dmc->assoc < CONSECUTIVE_BLOCKS ?
@@ -2248,7 +1850,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			goto bad6;
 		}
 	} else
-	dmc->block_size = DEFAULT_BLOCK_SIZE;
+		dmc->block_size = DEFAULT_BLOCK_SIZE;
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
 
@@ -2315,7 +1917,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
 
-	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
+	order = dmc->size * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
@@ -2339,8 +1941,7 @@ init:	/* Initialize the cache structs */
 		bio_list_init(&dmc->cache[i].bios);
 		if(!persistence) dmc->cache[i].state = 0;
 		dmc->cache[i].counter = 0;
-		rwlock_init(&dmc->cache[i].rwlock);
-		//spin_lock_init(&dmc->cache[i].lock);
+		spin_lock_init(&dmc->cache[i].lock);
 	}
 
 	dmc->counter = 0;
