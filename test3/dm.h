@@ -85,6 +85,13 @@ unsigned long max_sane_readahead(unsigned long nr);
 static unsigned long get_init_ra_size(unsigned long size, unsigned long max);
 static unsigned long get_next_ra_size(struct file_ra_state *ra,unsigned long max);
 static int precache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block,int i);
+
+
+static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
+	                   struct dm_io_region dest, struct cacheblock *cacheblock);
+static void precopy_callback(int read_err, unsigned int write_err, void *context);
+static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length);
+
 /*
  * To check the return value from dm_table_find_target().
  */

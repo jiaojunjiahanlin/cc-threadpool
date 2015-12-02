@@ -949,6 +949,40 @@ static void write_back(struct cache_c *dmc, sector_t index, unsigned int length)
 	copy_block(dmc, src, dest, cacheblock);
 }
 
+static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length)
+{
+	struct dm_io_region src, dest;
+	struct cacheblock *cacheblock = &dmc->cache[index];
+	unsigned int i;
+
+	DPRINTK("Write back block %llu(%llu, %u)",
+	        index, cacheblock->block, length);
+	dest.bdev = dmc->cache_dev->bdev;
+	dest.sector = index;
+	dest.count = dmc->block_size * length;
+	src.bdev = dmc->src_dev->bdev;
+	src.sector = request_block;
+	src.count = dmc->block_size * length;
+
+	for (i=0; i<length; i++)
+		set_state(dmc->cache[index+i].state, RESERVED);
+	precopy_block(dmc, src, dest, cacheblock);
+}
+
+static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
+	                   struct dm_io_region dest, struct cacheblock *cacheblock)
+{
+	DPRINTK("Copying: %llu:%llu->%llu:%llu",
+			src.sector, src.count * 512, dest.sector, dest.count * 512);
+	dm_kcopyd_copy(dmc->kcp_client, &src, 1, &dest, 0, \
+			(dm_kcopyd_notify_fn) precopy_callback, (void *)cacheblock);
+}
+
+static void precopy_callback(int read_err, unsigned int write_err, void *context)
+{
+	struct cacheblock *cacheblock = (struct cacheblock *) context;
+
+}
 
 /****************************************************************************
  *  Functions for implementing the various cache operations.
@@ -1621,23 +1655,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 
  	precache_insert(dmc, request_block, cache_block,i); /* Update metadata first */
 
-	job = new_kcached_job(dmc, bio, request_block, cache_block);
-
-	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; 
-	if (left < dmc->block_size) {         
-		tail = to_bytes(left) - bio->bi_size - head; 
-		job->src.count = left;    
-		job->dest.count = left;
-	} 
-
-
-	job->nr_pages= 0;
-					
-	job->rw = READ; /* Fetch data from the source device */
-
-	DPRINTK("Queue job for %llu (need %u pages)",
-	        bio->bi_sector, job->nr_pages);
-	queue_job(job);
+	pre_back(dmc, cache_block,request_block, 1);
 
 	}
 
