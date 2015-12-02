@@ -79,6 +79,25 @@
 #define set_state(x, y)		(x |= y)
 #define clear_state(x, y)	(x &= ~y)
 
+#define VERIFY(x) do { \
+	if (unlikely(!(x))) { \
+		dump_stack(); \
+		panic("VERIFY: assertion (%s) failed at %s (%d)\n", \
+		      #x,  __FILE__ , __LINE__);		    \
+	} \
+} while(0)
+
+
+/* Structure for a prefetch */
+struct prefetch_queue
+{
+    sector_t            most_recent_sector;
+	unsigned long       prefetch_length;
+	unsigned long       prefetch_num;
+	struct prefetch_queue    *prev, *next;
+
+};
+
 /*
  * Cache context
  */
@@ -122,8 +141,6 @@ struct cache_c {
 	struct prefetch_queue 	*seq_io_tail;
 	int sysctl_skip_seq_thresh_kb;
 
-	/* Stats */
-	struct flashcache_stats flashcache_stats;
 };
 
 /* Cache block metadata structure */
@@ -136,15 +153,6 @@ struct cacheblock {
 	struct file_ra_state *ra;
 };
 
-/* Structure for a prefetch */
-struct prefetch_queue
-{
-    sector_t            most_recent_sector;
-	unsigned long       prefetch_length;
-	unsigned long       prefetch_num;
-	struct prefetch_queue    *prev, *next;
-
-}
 
 /*
  * Track a single file's readahead state
@@ -252,7 +260,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 		seqio->prefetch_length	  = 1;
 	}
 	DPRINTK("skip_prefetch_queue: complete.");
-	if (skip) {
+	if (prefetch) {
 		if (bio_data_dir(bio) == READ)
 	        	dmc->uncached_sequential_reads++;
 		else 
@@ -2085,9 +2093,17 @@ init:	/* Initialize the cache structs */
 	dmc->replace = 0;
 	dmc->writeback = 0;
 	dmc->dirty = 0;
-
+	for (i = 0; i < PREMAX; i++) {
+		dmc->seq_recent_ios[i].most_recent_sector = 0;
+		dmc->seq_recent_ios[i].sequential_count = 0;
+		dmc->seq_recent_ios[i].prev = (struct sequential_io *)NULL;
+		dmc->seq_recent_ios[i].next = (struct sequential_io *)NULL;
+		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[i]);
+	}
+	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
+
 	return 0;
 
 bad6:
