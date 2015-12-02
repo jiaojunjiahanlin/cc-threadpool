@@ -1381,10 +1381,17 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		dmc->writeback++;
 
 		}
+
+		/* Forward to source device */
+		bio->bi_bdev = dmc->src_dev->bdev;
+		return 1;
+
 	     
 	}
+	else
+	{
 
-	DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
+DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
 	        bio_rw(bio) == WRITE ? "WRITE" : (bio_rw(bio) == READ ?
 	        "READ":"READA"), bio->bi_sector, request_block, offset,
 	        bio->bi_size);
@@ -1400,7 +1407,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	else if (2 == res) { /* Entire cache set is dirty; initiate a write-back */
 		write_back(dmc, cache_block, 1);
 		dmc->writeback++;
+		}
 	}
+
+	
 
 	/* Forward to source device */
 	bio->bi_bdev = dmc->src_dev->bdev;
@@ -1569,6 +1579,69 @@ static unsigned long get_next_ra_size(struct file_ra_state *ra,
 		newsize = 2 * cur;
 
 	return min(newsize, max);
+}
+
+static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit) {
+
+	struct cacheblock *cache = dmc->cache;
+	unsigned int offset, head, tail;
+	struct kcached_job *job;
+	struct kcached_job *prejob;
+	sector_t request_block, left;
+
+	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
+	request_block = bio->bi_sector - offset;   
+
+	if (cache[cache_block].state & VALID) {
+		DPRINTK("Replacing %llu->%llu",
+		        cache[cache_block].block, request_block);
+		dmc->replace++;
+	} else DPRINTK("Insert block %llu at empty frame %llu",
+		request_block, cache_block);
+
+    cache_read_miss(dmc, bio, 0);
+
+    if(hit)
+    {
+    	request_block=cache[request_block]->ra->start+cache[request_block]->ra->size;
+
+    }
+
+	for(int i=0;i<cache[cache_block].ra->size;i++)
+	{
+
+
+		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
+
+		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
+		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
+
+       	
+
+ 	precache_insert(dmc, request_block, cache_block,i); /* Update metadata first */
+
+	job = new_kcached_job(dmc, bio, request_block, cache_block);
+
+	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block; 
+	if (left < dmc->block_size) {         
+		tail = to_bytes(left) - bio->bi_size - head; 
+		job->src.count = left;    
+		job->dest.count = left;
+	} 
+
+
+	job->nr_pages= 0;
+					
+	job->rw = write; /* Fetch data from the source device */
+
+	DPRINTK("Queue job for %llu (need %u pages)",
+	        bio->bi_sector, job->nr_pages);
+	queue_job(job);
+
+	}
+
+	
+	return 0;
 }
 
 struct meta_dmc {

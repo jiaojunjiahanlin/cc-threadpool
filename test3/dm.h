@@ -79,7 +79,7 @@ int skip_sequential_io(struct cache_c *dmc, struct bio *bio);
 
 static int precache_lookup(struct cache_c *dmc, sector_t block,sector_t *cache_block,sector_t *precache_block);
 static unsigned long ondemand_readahead(struct bio *bio,struct file_ra_state *prera,struct file_ra_state *nextra, sector_t request_block,int hit);
-
+static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit);
 
 unsigned long max_sane_readahead(unsigned long nr);
 static unsigned long get_init_ra_size(unsigned long size, unsigned long max);
