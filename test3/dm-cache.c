@@ -224,7 +224,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
    struct prefetch_queue *seqio;
    int sequential = 0;	
    int prefetch   = 0;	
-   VERIFY(spin_is_locked(&dmc->lock));
+   //VERIFY(spin_is_locked(&dmc->lock));
    for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
 
 		if (bio->bi_sector == seqio->most_recent_sector) {
