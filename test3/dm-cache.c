@@ -87,11 +87,13 @@
 	} \
 } while(0)
 
-#define rounddown_pow_of_two(n)			\
+#define roundup_pow_of_two(n)			\
 (						\
 	__builtin_constant_p(n) ? (		\
-		(1UL << ilog2(n))) :		\
-	__rounddown_pow_of_two(n)		\
+		(n == 1) ? 1 :			\
+		(1UL << (ilog2((n) - 1) + 1))	\
+				   ) :		\
+	__roundup_pow_of_two(n)			\
  )
 
 /* Structure for a prefetch */
@@ -210,6 +212,8 @@ static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 	                   struct dm_io_region dest, struct cacheblock *cacheblock);
 static void precopy_callback(int read_err, unsigned int write_err, void *context);
 static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length);
+unsigned long __roundup_pow_of_two(unsigned long n);
+
 
 
 /****************************************************************************
@@ -707,6 +711,11 @@ static int do_fetch(struct kcached_job *job)
 	}
 }
 
+
+unsigned long __roundup_pow_of_two(unsigned long n)
+{
+	return 1UL << fls_long(n - 1);
+}
 /*
  * Store data to the cache source device asynchronously.
  * For a READ bio request, the data fetched from the source device are returned
@@ -1591,7 +1600,7 @@ static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct
 initial_readahead:
 	nextra->start = request_block+DEFAULT_BLOCK_SIZE;
 	nextra->size = pre_init_ra_size(1, max);
-	nextra->async_size = ra->size;
+	nextra->async_size = nextra->size;
 
 readit:
 		DPRINTK("Cache lookup: Block %s", "hit_readahead_marker and the window is now");
@@ -1650,7 +1659,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 
 	struct cacheblock *cache = dmc->cache;
 	unsigned int offset;
-
+    sector_t request_block;
 
 	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
 	request_block = bio->bi_sector - offset;   
@@ -1669,8 +1678,8 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
     	request_block=cache[request_block].ra->start+cache[request_block].ra->size;
 
     }
-
-	for (int i=0; i<cache[cache_block].ra->size ; i++)
+    int i;
+	for (i=0; i<cache[cache_block].ra->size ; i++)
 	{
 
 
@@ -1703,7 +1712,7 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block,
 	 */
        if (i=0)
        {
-       	cache[cache_block]->ra->hit_readahead_marker=1;
+       	cache[cache_block].ra->hit_readahead_marker=1;
 
        }
 	cache[cache_block].block = block;
