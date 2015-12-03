@@ -195,9 +195,9 @@ static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct
 static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit);
 
 unsigned long max_sane_readahead(unsigned long nr);
-static unsigned long get_init_ra_size(unsigned long size, unsigned long max);
-static unsigned long get_next_ra_size(struct pre_ra_state *ra,unsigned long max);
-static int precache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block,int i);
+static unsigned long pre_init_ra_size(unsigned long size, unsigned long max);
+static unsigned long pre_next_ra_size(struct pre_ra_state *ra,unsigned long max);
+static int pre_cache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block,int i);
 
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
@@ -1577,8 +1577,8 @@ static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct
 	if (prera->hit_readahead_marker) {
 		
         nextra->start = prera->start+prera->size;
-		nextra->size = get_next_ra_size(prera, max);
-		nextra->async_size = ra->size;
+		nextra->size = pre_next_ra_size(prera, max);
+		nextra->async_size = nextra->size;
 		goto readit;
 
 	}
@@ -1586,7 +1586,7 @@ static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct
 
 initial_readahead:
 	ra->start = request_block+DEFAULT_BLOCK_SIZE;
-	ra->size = get_init_ra_size(1, max);
+	ra->size = pre_init_ra_size(1, max);
 	ra->async_size = ra->size;
 
 readit:
@@ -1611,7 +1611,7 @@ unsigned long max_sane_readahead(unsigned long nr)
  * for 128k (32 page) max ra
  * 1-8 page = 32k initial, > 8 page = 128k initial
  */
-static unsigned long get_init_ra_size(unsigned long size, unsigned long max)
+static unsigned long pre_init_ra_size(unsigned long size, unsigned long max)
 {
 	unsigned long newsize = roundup_pow_of_two(size);
 
@@ -1629,7 +1629,7 @@ static unsigned long get_init_ra_size(unsigned long size, unsigned long max)
  *  Get the previous window size, ramp it up, and
  *  return it as the new window size.
  */
-static unsigned long get_next_ra_size(struct pre_ra_state *ra,
+static unsigned long pre_next_ra_size(struct pre_ra_state *ra,
 						unsigned long max)
 {
 	unsigned long cur = ra->size;
@@ -1646,10 +1646,8 @@ static unsigned long get_next_ra_size(struct pre_ra_state *ra,
 static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit) {
 
 	struct cacheblock *cache = dmc->cache;
-	unsigned int offset, head, tail;
-	struct kcached_job *job;
-	struct kcached_job *prejob;
-	sector_t request_block, left;
+	unsigned int offset;
+
 
 	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
 	request_block = bio->bi_sector - offset;   
@@ -1665,15 +1663,15 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 
     if(hit)
     {
-    	request_block=cache[request_block]->ra->start+cache[request_block]->ra->size;
+    	request_block=cache[request_block].ra->start+cache[request_block].ra->size;
 
     }
 
-	for(int i=0;i<cache[cache_block].ra->size;i++)
+	for (int i=0; i<cache[cache_block].ra->size ; i++)
 	{
 
 
-		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
+		int j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
 
 		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
 		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
@@ -1681,7 +1679,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 
        	
 
- 	precache_insert(dmc, request_block, cache_block,i); /* Update metadata first */
+ 	pre_cache_insert(dmc, request_block, cache_block,i); /* Update metadata first */
 
 	pre_back(dmc, cache_block,request_block, 1);
 
@@ -1692,7 +1690,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 }
 
 
-static int precache_insert(struct cache_c *dmc, sector_t block,
+static int pre_cache_insert(struct cache_c *dmc, sector_t block,
 	                    sector_t cache_block,int i)
 {
 	struct cacheblock *cache = dmc->cache;
