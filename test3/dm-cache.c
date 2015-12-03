@@ -87,6 +87,12 @@
 	} \
 } while(0)
 
+#define rounddown_pow_of_two(n)			\
+(						\
+	__builtin_constant_p(n) ? (		\
+		(1UL << ilog2(n))) :		\
+	__rounddown_pow_of_two(n)		\
+ )
 
 /* Structure for a prefetch */
 struct prefetch_queue
@@ -1565,8 +1571,6 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit)
 {
 	unsigned long max = max_sane_readahead(1000);
-	int size;
-	int async_size;
 
 	/*
 	 * start of file
@@ -1585,9 +1589,9 @@ static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct
 
 
 initial_readahead:
-	ra->start = request_block+DEFAULT_BLOCK_SIZE;
-	ra->size = pre_init_ra_size(1, max);
-	ra->async_size = ra->size;
+	nextra->start = request_block+DEFAULT_BLOCK_SIZE;
+	nextra->size = pre_init_ra_size(1, max);
+	nextra->async_size = ra->size;
 
 readit:
 		DPRINTK("Cache lookup: Block %s", "hit_readahead_marker and the window is now");
@@ -1629,8 +1633,7 @@ static unsigned long pre_init_ra_size(unsigned long size, unsigned long max)
  *  Get the previous window size, ramp it up, and
  *  return it as the new window size.
  */
-static unsigned long pre_next_ra_size(struct pre_ra_state *ra,
-						unsigned long max)
+static unsigned long pre_next_ra_size(struct pre_ra_state *ra,unsigned long max)
 {
 	unsigned long cur = ra->size;
 	unsigned long newsize;
