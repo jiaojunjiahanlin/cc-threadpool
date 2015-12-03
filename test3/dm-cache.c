@@ -191,7 +191,7 @@ void seq_io_move_to_lruhead(struct cache_c *dmc, struct prefetch_queue *seqio);
 int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio);
 
 static int precache_lookup(struct cache_c *dmc, sector_t block,sector_t *cache_block,sector_t *precache_block);
-static unsigned long ondemand_readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit);
+static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit);
 static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block,int hit);
 
 unsigned long max_sane_readahead(unsigned long nr);
@@ -1403,6 +1403,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	sector_t request_block, cache_block = 0,precache_block=0, offset;
 	int res;
 	int prefetch =0;
+	struct cacheblock *cache = dmc->cache;
 
 	offset = bio->bi_sector & dmc->block_mask;
 	request_block = bio->bi_sector - offset;
@@ -1419,9 +1420,9 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		if (1 == res)
 		{
 			cache_hit(dmc, bio, cache_block);
-		    if (dmc->cache[cache_block]->ra->hit_readahead_marker)
+		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
-		    	unsigned long on= ondemand_readahead(bio,cache[cache_block]->ra,cache[precache_block]->ra,request_block,1); 
+		    	unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,1); 
 		    	return precache_read_miss(dmc, bio, precache_block,1);
 		    } 
 			return 1;
@@ -1430,10 +1431,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		
 	else if (0 == res) 
 		{
-			cache[precache_block]->ra->hit_readahead_marker=0;
-		    unsigned long on= ondemand_readahead(bio,cache[cache_block]->ra,cache[precache_block]->ra,request_block,0); 
+			cache[precache_block].ra->hit_readahead_marker=0;
+		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,0); 
 		   
-			return precache_read_miss(dmc, bio, precache_block); 
+			return precache_read_miss(dmc, bio, precache_block,0); 
 		}
 		
 	else if (2 == res) { 
@@ -1486,7 +1487,7 @@ DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
 static int precache_lookup(struct cache_c *dmc, sector_t block,
 	                    sector_t *cache_block,sector_t *precache_block)
 {
-	unsigned long set_number = DEFAULT_CACHE_SIZE／DEFAULT_CACHE_ASSOC;
+	unsigned long set_number = DEFAULT_CACHE_SIZE/DEFAULT_CACHE_ASSOC;
 	sector_t index;
 	int i, res;
 	unsigned int cache_assoc = dmc->assoc;
@@ -1500,14 +1501,14 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
-				if (cache[index].state, RESERVED)) {
+				if (cache[index].state, RESERVED) {
 					*cache_block = index; 
 
 				/* Reset all counters if the largest one is going to overflow */
 				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 				cache[index].counter = ++dmc->counter;
 
-				if (cache[index].block->ra.hit_readahead_marker)
+				if (cache[index].ra->hit_readahead_marker)
 						{
 							continue;
 						}
@@ -1561,7 +1562,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 /*
  * A minimal readahead algorithm for trivial sequential/random reads.
  */
-static unsigned long ondemand_readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit)
+static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit)
 {
 	unsigned long max = max_sane_readahead(1000);
 	int size;
