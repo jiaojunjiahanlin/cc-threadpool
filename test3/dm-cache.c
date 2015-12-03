@@ -212,7 +212,7 @@ static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 	                   struct dm_io_region dest, struct cacheblock *cacheblock);
 static void precopy_callback(int read_err, unsigned int write_err, void *context);
 static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length);
-unsigned long __roundup_pow_of_two(unsigned long n);
+
 
 
 
@@ -712,10 +712,6 @@ static int do_fetch(struct kcached_job *job)
 }
 
 
-unsigned long __roundup_pow_of_two(unsigned long n)
-{
-	return 1UL << fls_long(n - 1);
-}
 /*
  * Store data to the cache source device asynchronously.
  * For a READ bio request, the data fetched from the source device are returned
@@ -1547,6 +1543,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 			if (-1 == invalid) invalid = i;
 		}
 	}
+}
 
 	res = i < SEQ_CACHE_SIZE ? 1 : 0;
 	if (!res) { /* Cache miss */
@@ -1574,9 +1571,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 
 
 
-/*
- * A minimal readahead algorithm for trivial sequential/random reads.
- */
+
 static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit)
 {
 	unsigned long max = max_sane_readahead(1000);
@@ -1604,6 +1599,7 @@ initial_readahead:
 
 readit:
 		DPRINTK("Cache lookup: Block %s", "hit_readahead_marker and the window is now");
+
 
     return 1;
 }
@@ -1702,15 +1698,14 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 }
 
 
-static int pre_cache_insert(struct cache_c *dmc, sector_t block,
-	                    sector_t cache_block,int i)
+static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_block,int i)
 {
 	struct cacheblock *cache = dmc->cache;
 
 	/* Mark the block as RESERVED because although it is allocated, the data are
        not in place until kcopyd finishes its job.
 	 */
-       if (i=0)
+       if (i==0)
        {
        	cache[cache_block].ra->hit_readahead_marker=1;
 
