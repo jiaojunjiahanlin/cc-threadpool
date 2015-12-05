@@ -101,7 +101,6 @@ struct prefetch_queue
 {
     sector_t            most_recent_sector;
 	unsigned long       prefetch_length;
-	unsigned long       prefetch_num;
 	struct prefetch_queue    *prev, *next;
 
 };
@@ -234,7 +233,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
    //VERIFY(spin_is_locked(&dmc->lock));
    for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
 
-         dmc->sort=1;
+         dmc->sort++;
 		if (bio->bi_sector == seqio->most_recent_sector) {
 			/* Reread or write same sector again.  Ignore but move to head */
 			DPRINTK("skip_prefetch_queue: repeat");
@@ -2096,16 +2095,24 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		r = -ENOMEM;
 		goto bad6;
 	}
-    dmc->sysctl_skip_seq_thresh_kb=16;
+    dmc->sysctl_skip_seq_thresh_kb=6;
 	int j;
 		for (j = 0; j < PREMAX; j++) {
 		dmc->seq_recent_ios[j].most_recent_sector = 0;
+		dmc->seq_recent_ios[j].prefetch_length = 0;
 		dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
 		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
 		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
 	}
 
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
+	dmc->sequential_reads0=0;
+	dmc->sequential_reads1=0;
+	dmc->sequential_reads2=0;
+	dmc->sequential_reads3=0;
+	dmc->sequential_reads4=0;
+	dmc->pre_hits=0;
+	dmc->sort=0;
 
 init:	/* Initialize the cache structs */
 	for (i=0; i< dmc->size+SEQ_CACHE_SIZE; i++) {
@@ -2123,16 +2130,6 @@ init:	/* Initialize the cache structs */
 	dmc->replace = 0;
 	dmc->writeback = 0;
 	dmc->dirty = 0;
-	dmc->sequential_reads0=0;
-	dmc->sequential_reads1=0;
-	dmc->sequential_reads2=0;
-	dmc->sequential_reads3=0;
-	dmc->sequential_reads4=0;
-	dmc->pre_hits=0;
-	dmc->sort=0;
-
-
-
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
 
