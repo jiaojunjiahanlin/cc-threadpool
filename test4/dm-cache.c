@@ -2122,8 +2122,8 @@ init:	/* Initialize the cache structs */
 	dmc->sort=0;
 	for (i = 0; i < PREMAX; i++) {
 		dmc->seq_recent_ios[i].most_recent_sector = 0;
-		dmc->seq_recent_ios[i].prev = (struct sequential_io *)NULL;
-		dmc->seq_recent_ios[i].next = (struct sequential_io *)NULL;
+		dmc->seq_recent_ios[i].prev = (struct prefetch_queue *)NULL;
+		dmc->seq_recent_ios[i].next = (struct prefetch_queue *)NULL;
 		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[i]);
 	}
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
