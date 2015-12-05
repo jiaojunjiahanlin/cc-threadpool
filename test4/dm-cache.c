@@ -1932,13 +1932,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	sector_t data_size, meta_size, dev_size;
 	unsigned long long cache_size;
 	int r = -EINVAL;
-		int j;
-		for (j = 0; j < PREMAX; j++) {
-		dmc->seq_recent_ios[j].most_recent_sector = 0;
-		dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
-		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
-		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
-	}
+		
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
 
 	if (argc < 2) {
@@ -2102,6 +2096,14 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "Unable to allocate memory";
 		r = -ENOMEM;
 		goto bad6;
+	}
+
+	int j;
+		for (j = 0; j < PREMAX; j++) {
+		dmc->seq_recent_ios[j].most_recent_sector = 0;
+		dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
+		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
+		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
 	}
 
 init:	/* Initialize the cache structs */
