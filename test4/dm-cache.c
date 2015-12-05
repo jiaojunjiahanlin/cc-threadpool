@@ -140,7 +140,8 @@ struct cache_c {
 	unsigned long cache_hits;	/* Number of cache hits */
 	unsigned long replace;		/* Number of cache replacements */
 	unsigned long writeback;	/* Number of replaced dirty blocks */
-	unsigned long dirty;		/* Number of submitted dirty blocks */
+	unsigned long dirty;
+	unsigned long sequential_reads0;		/* Number of submitted dirty blocks */
 	unsigned long sequential_reads1;
 	unsigned long sequential_reads2;
 	unsigned long sequential_reads3;
@@ -275,9 +276,9 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 	DPRINTK("skip_prefetch_queue: complete.");
 	if (prefetch) {
 		if (bio_data_dir(bio) == READ)
-	        	dmc->sequential_reads1++;
+	        	dmc->sequential_reads0++;
 		else 
-	        	dmc->sequential_reads1++;
+	        	dmc->sequential_reads0++;
 	}
 
 	return prefetch;
@@ -1426,6 +1427,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (bio_data_dir(bio) == READ)
 	{
+		dmc->reads++;
 		prefetch=skip_prefetch_queue(dmc, bio);
 	}
 
@@ -1435,6 +1437,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
+			dmc->hits++;
 			cache_hit(dmc, bio, cache_block);
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
@@ -2105,6 +2108,7 @@ init:	/* Initialize the cache structs */
 	dmc->replace = 0;
 	dmc->writeback = 0;
 	dmc->dirty = 0;
+	dmc->sequential_reads0=0;
 	dmc->sequential_reads1=0;
 	dmc->sequential_reads2=0;
 	dmc->sequential_reads3=0;
@@ -2207,11 +2211,11 @@ static int cache_status(struct dm_target *ti, status_type_t type,
 	case STATUSTYPE_INFO:
 		DMEMIT("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu)," \
 	           "replacement(%lu), replaced dirty blocks(%lu),"\
-	           "pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu)",
+	           "pre0 blocks(%lu),pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu)",
 	           dmc->reads, dmc->writes, dmc->cache_hits,
 	           (dmc->reads + dmc->writes) > 0 ? \
 	           dmc->cache_hits * 100 / (dmc->reads + dmc->writes) : 0,
-	           dmc->replace, dmc->writeback,dmc->sequential_reads1,dmc->sequential_reads2,dmc->sequential_reads3,dmc->sequential_reads4);
+	           dmc->replace, dmc->writeback,dmc->sequential_reads0,dmc->sequential_reads1,dmc->sequential_reads2,dmc->sequential_reads3,dmc->sequential_reads4);
 		break;
 	case STATUSTYPE_TABLE:
 		DMEMIT("conf: capacity(%lluM), associativity(%u), block size(%uK), %s",
