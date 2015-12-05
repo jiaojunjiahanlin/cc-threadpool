@@ -1932,6 +1932,14 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	sector_t data_size, meta_size, dev_size;
 	unsigned long long cache_size;
 	int r = -EINVAL;
+	int j;
+		for (j = 0; j < PREMAX; i++) {
+		dmc->seq_recent_ios[j].most_recent_sector = 0;
+		dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
+		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
+		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
+	}
+	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
 
 	if (argc < 2) {
 		ti->error = "dm-cache: Need at least 2 arguments (src dev and cache dev)";
@@ -2120,13 +2128,7 @@ init:	/* Initialize the cache structs */
 	dmc->sysctl_skip_seq_thresh_kb=32;
 	dmc->pre_hits=0;
 	dmc->sort=0;
-	for (i = 0; i < PREMAX; i++) {
-		dmc->seq_recent_ios[i].most_recent_sector = 0;
-		dmc->seq_recent_ios[i].prev = (struct prefetch_queue *)NULL;
-		dmc->seq_recent_ios[i].next = (struct prefetch_queue *)NULL;
-		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[i]);
-	}
-	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
+
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
 
