@@ -147,6 +147,8 @@ struct cache_c {
 	unsigned long sequential_reads3;
 	unsigned long sequential_reads4;
 	unsigned long pre_hits;
+	unsigned long sort;
+	
 
 	/* Sequential I/O spotter */
 	struct prefetch_queue	seq_recent_ios[PREMAX];
@@ -232,6 +234,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
    //VERIFY(spin_is_locked(&dmc->lock));
    for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
 
+         dmc->sort=1;
 		if (bio->bi_sector == seqio->most_recent_sector) {
 			/* Reread or write same sector again.  Ignore but move to head */
 			DPRINTK("skip_prefetch_queue: repeat");
@@ -2116,6 +2119,7 @@ init:	/* Initialize the cache structs */
 	dmc->sequential_reads4=0;
 	dmc->sysctl_skip_seq_thresh_kb=32;
 	dmc->pre_hits=0;
+	dmc->sort=0;
 	for (i = 0; i < PREMAX; i++) {
 		dmc->seq_recent_ios[i].most_recent_sector = 0;
 		dmc->seq_recent_ios[i].prev = (struct sequential_io *)NULL;
