@@ -2096,7 +2096,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		r = -ENOMEM;
 		goto bad6;
 	}
-
+    dmc->sysctl_skip_seq_thresh_kb=16;
 	int j;
 		for (j = 0; j < PREMAX; j++) {
 		dmc->seq_recent_ios[j].most_recent_sector = 0;
@@ -2104,7 +2104,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
 		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
 	}
-		
+
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
 
 init:	/* Initialize the cache structs */
@@ -2128,7 +2128,6 @@ init:	/* Initialize the cache structs */
 	dmc->sequential_reads2=0;
 	dmc->sequential_reads3=0;
 	dmc->sequential_reads4=0;
-	dmc->sysctl_skip_seq_thresh_kb=32;
 	dmc->pre_hits=0;
 	dmc->sort=0;
 
