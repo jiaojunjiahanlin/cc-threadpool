@@ -250,7 +250,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 				seq_io_move_to_lruhead(dmc, seqio);
 
 			/* Is it now sequential enough to be sure? (threshold expressed in kb) */
-			if (to_bytes(seqio->prefetch_length * dmc->block_size) > dmc->sysctl_skip_seq_thresh_kb * 1024) {
+			if (to_bytes(seqio->prefetch_length * dmc->block_size) > dmc->sysctl_skip_seq_thresh_kb * dmc->block_size) {
 				DPRINTK("skip_prefetch_queue: Sequential i/o detected, seq count now %lu", 
 					seqio->prefetch_length);
 				/* Sufficiently sequential */
@@ -2109,6 +2109,7 @@ init:	/* Initialize the cache structs */
 	dmc->sequential_reads2=0;
 	dmc->sequential_reads3=0;
 	dmc->sequential_reads4=0;
+	dmc->sysctl_skip_seq_thresh_kb=32;
 	for (i = 0; i < PREMAX; i++) {
 		dmc->seq_recent_ios[i].most_recent_sector = 0;
 		dmc->seq_recent_ios[i].prev = (struct sequential_io *)NULL;
@@ -2176,7 +2177,8 @@ static void cache_dtr(struct dm_target *ti)
 	if (dmc->reads + dmc->writes > 0)
 		DMINFO("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu)," \
 		       "replacement(%lu), replaced dirty blocks(%lu), " \
-	           "flushed dirty blocks(%lu)","pre1 blocks(%lu)","pre2 blocks(%lu)","pre3 blocks(%lu)","pre4 blocks(%lu)",
+	           "flushed dirty blocks(%lu)", \
+	           "pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu)",
 		       dmc->reads, dmc->writes, dmc->cache_hits,
 		       dmc->cache_hits * 100 / (dmc->reads + dmc->writes),
 		       dmc->replace, dmc->writeback, dmc->dirty,dmc->sequential_reads1,dmc->sequential_reads2,dmc->sequential_reads3,dmc->sequential_reads4);
@@ -2204,7 +2206,8 @@ static int cache_status(struct dm_target *ti, status_type_t type,
 	switch (type) {
 	case STATUSTYPE_INFO:
 		DMEMIT("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu)," \
-	           "replacement(%lu), replaced dirty blocks(%lu)","pre1 blocks(%lu)","pre2 blocks(%lu)","pre3 blocks(%lu)","pre4 blocks(%lu)",
+	           "replacement(%lu), replaced dirty blocks(%lu)",\
+	           "pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu)",
 	           dmc->reads, dmc->writes, dmc->cache_hits,
 	           (dmc->reads + dmc->writes) > 0 ? \
 	           dmc->cache_hits * 100 / (dmc->reads + dmc->writes) : 0,
