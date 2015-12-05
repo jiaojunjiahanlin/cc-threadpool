@@ -252,7 +252,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 				seq_io_move_to_lruhead(dmc, seqio);
 
 			/* Is it now sequential enough to be sure? (threshold expressed in kb) */
-			if (to_bytes(seqio->prefetch_length * dmc->block_size) > dmc->sysctl_skip_seq_thresh_kb * dmc->block_size) {
+			if (seqio->prefetch_length > dmc->sysctl_skip_seq_thresh_kb) {
 				DPRINTK("skip_prefetch_queue: Sequential i/o detected, seq count now %lu", 
 					seqio->prefetch_length);
 				/* Sufficiently sequential */
