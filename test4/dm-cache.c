@@ -1932,8 +1932,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	sector_t data_size, meta_size, dev_size;
 	unsigned long long cache_size;
 	int r = -EINVAL;
-		
-	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
+	
 
 	if (argc < 2) {
 		ti->error = "dm-cache: Need at least 2 arguments (src dev and cache dev)";
@@ -2105,6 +2104,8 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
 		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
 	}
+		
+	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
 
 init:	/* Initialize the cache structs */
 	for (i=0; i< dmc->size+SEQ_CACHE_SIZE; i++) {
