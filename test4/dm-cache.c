@@ -275,9 +275,9 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 	DPRINTK("skip_prefetch_queue: complete.");
 	if (prefetch) {
 		if (bio_data_dir(bio) == READ)
-	        	dmc->uncached_sequential_reads++;
+	        	dmc->sequential_reads1++;
 		else 
-	        	dmc->uncached_sequential_writes++;
+	        	dmc->sequential_reads1++;
 	}
 
 	return prefetch;
