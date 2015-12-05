@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-umount /dev/mapper/cache
-dmsetup remove cache
+umount /dev/mapper/pcache
+dmsetup remove pcache
 rmmod dm-cache

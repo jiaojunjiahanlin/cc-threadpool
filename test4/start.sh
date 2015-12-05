@@ -2,9 +2,9 @@
 
 modprobe dm-mod
 insmod dm-cache.ko
-echo 0 62914560 cache /dev/vdc /dev/vdb | dmsetup create cache
+echo 0 62914560 cache /dev/vdc /dev/vdb | dmsetup create pcache
 dmsetup status
-mount /dev/mapper/cache /mnt/dmcache/
+mount /dev/mapper/pcache /mnt/dmcache/
 cd /mnt/dmcache/
 
 

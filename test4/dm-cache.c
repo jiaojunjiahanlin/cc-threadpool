@@ -1932,8 +1932,8 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	sector_t data_size, meta_size, dev_size;
 	unsigned long long cache_size;
 	int r = -EINVAL;
-	int j;
-		for (j = 0; j < PREMAX; i++) {
+		int j;
+		for (j = 0; j < PREMAX; j++) {
 		dmc->seq_recent_ios[j].most_recent_sector = 0;
 		dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
 		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
@@ -2128,6 +2128,8 @@ init:	/* Initialize the cache structs */
 	dmc->sysctl_skip_seq_thresh_kb=32;
 	dmc->pre_hits=0;
 	dmc->sort=0;
+
+
 
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
