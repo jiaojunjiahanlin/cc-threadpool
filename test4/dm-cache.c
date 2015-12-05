@@ -146,6 +146,7 @@ struct cache_c {
 	unsigned long sequential_reads2;
 	unsigned long sequential_reads3;
 	unsigned long sequential_reads4;
+	unsigned long pre_hits;
 
 	/* Sequential I/O spotter */
 	struct prefetch_queue	seq_recent_ios[PREMAX];
@@ -1437,7 +1438,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
-			dmc->hits++;
+			dmc->pre_hits++;
 			cache_hit(dmc, bio, cache_block);
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
@@ -2114,6 +2115,7 @@ init:	/* Initialize the cache structs */
 	dmc->sequential_reads3=0;
 	dmc->sequential_reads4=0;
 	dmc->sysctl_skip_seq_thresh_kb=32;
+	dmc->pre_hits=0;
 	for (i = 0; i < PREMAX; i++) {
 		dmc->seq_recent_ios[i].most_recent_sector = 0;
 		dmc->seq_recent_ios[i].prev = (struct sequential_io *)NULL;
@@ -2209,10 +2211,10 @@ static int cache_status(struct dm_target *ti, status_type_t type,
 
 	switch (type) {
 	case STATUSTYPE_INFO:
-		DMEMIT("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu)," \
+		DMEMIT("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu),pre hits(%lu, 0.%lu)," \
 	           "replacement(%lu), replaced dirty blocks(%lu),"\
 	           "pre0 blocks(%lu),pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu)",
-	           dmc->reads, dmc->writes, dmc->cache_hits,
+	           dmc->reads, dmc->writes, dmc->cache_hits,dmc->pre_hits,
 	           (dmc->reads + dmc->writes) > 0 ? \
 	           dmc->cache_hits * 100 / (dmc->reads + dmc->writes) : 0,
 	           dmc->replace, dmc->writeback,dmc->sequential_reads0,dmc->sequential_reads1,dmc->sequential_reads2,dmc->sequential_reads3,dmc->sequential_reads4);
