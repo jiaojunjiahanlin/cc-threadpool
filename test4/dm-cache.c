@@ -259,7 +259,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 					seqio->prefetch_length);
 				/* Sufficiently sequential */
 				prefetch = 1;
-				dmc->sort++;
+				
 			}
 		}
 	}
@@ -1438,6 +1438,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
+		dmc->reads++;
 		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
@@ -1455,6 +1456,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		
 	else if (0 == res) 
 		{
+			dmc->sort++;
 			dmc->sequential_reads1++;
 			cache[precache_block].ra->hit_readahead_marker=0;
 		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
