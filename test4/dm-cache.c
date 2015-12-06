@@ -230,11 +230,10 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
    struct prefetch_queue *seqio;
    int sequential = 0;	
    int prefetch   = 0;	
-   dmc->sort++;
    //VERIFY(spin_is_locked(&dmc->lock));
    for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
 
-        printk("seqio != NULL && sequential == 0;");
+           dmc->sort++;
 		if (bio->bi_sector == seqio->most_recent_sector) {
 			/* Reread or write same sector again.  Ignore but move to head */
 			DPRINTK("skip_prefetch_queue: repeat");
@@ -260,6 +259,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 					seqio->prefetch_length);
 				/* Sufficiently sequential */
 				prefetch = 1;
+				printk("prefetch = 1");
 			}
 		}
 	}
@@ -1438,7 +1438,6 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-        dmc->sort++;
 		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
@@ -2121,7 +2120,13 @@ init:	/* Initialize the cache structs */
 	dmc->dirty = 0;
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
-
+	dmc->sequential_reads0= 0;
+	dmc->sequential_reads1= 0;
+	dmc->sequential_reads2= 0;
+	dmc->sequential_reads3= 0;
+	dmc->sequential_reads4= 0;
+	dmc->pre_hits= 0;
+	dmc->sort= 0;
 
 	for (j = 0; j < PREMAX; j++) 
 		{
@@ -2224,7 +2229,7 @@ static int cache_status(struct dm_target *ti, status_type_t type,
 	           dmc->reads, dmc->writes, dmc->cache_hits,
 	           (dmc->reads + dmc->writes) > 0 ? \
 	           dmc->cache_hits * 100 / (dmc->reads + dmc->writes) : 0,
-	           dmc->replace, dmc->writeback, dmc->sequential_reads0, dmc->sequential_reads1, dmc->sequential_reads2, dmc->sequential_reads3, dmc->sequential_reads4, dmc->sort);
+	           dmc->replace, dmc->writeback, dmc->sequential_reads0, dmc->pre_hits, dmc->sequential_reads2, dmc->sequential_reads3, dmc->sequential_reads4, dmc->sort);
 		break;
 	case STATUSTYPE_TABLE:
 		DMEMIT("conf: capacity(%lluM), associativity(%u), block size(%uK), %s",
