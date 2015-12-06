@@ -2108,13 +2108,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
-	dmc->sequential_reads0=0;
-	dmc->sequential_reads1=0;
-	dmc->sequential_reads2=0;
-	dmc->sequential_reads3=0;
-	dmc->sequential_reads4=0;
-	dmc->pre_hits=0;
-	dmc->sort=0;
+
 
 init:	/* Initialize the cache structs */
 	for (i=0; i< dmc->size+SEQ_CACHE_SIZE; i++) {
@@ -2223,10 +2217,10 @@ static int cache_status(struct dm_target *ti, status_type_t type,
 		DMEMIT("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu),pre hits(%lu, 0.%lu)," \
 	           "replacement(%lu), replaced dirty blocks(%lu)," \
 	           "pre0 blocks(%lu),pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu),sort blocks(%lu)",
-	           dmc->reads, dmc->writes, dmc->cache_hits,dmc->pre_hits,
+	           dmc->reads, dmc->writes, dmc->cache_hits, dmc->pre_hits,
 	           (dmc->reads + dmc->writes) > 0 ? \
 	           dmc->cache_hits * 100 / (dmc->reads + dmc->writes) : 0,
-	           dmc->replace, dmc->writeback,dmc->sequential_reads0,dmc->sequential_reads1,dmc->sequential_reads2,dmc->sequential_reads3,dmc->sequential_reads4,dmc->sort);
+	           dmc->replace, dmc->writeback, dmc->sequential_reads0, dmc->sequential_reads1, dmc->sequential_reads2, dmc->sequential_reads3, dmc->sequential_reads4, dmc->sort);
 		break;
 	case STATUSTYPE_TABLE:
 		DMEMIT("conf: capacity(%lluM), associativity(%u), block size(%uK), %s",
