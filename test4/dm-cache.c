@@ -230,10 +230,11 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
    struct prefetch_queue *seqio;
    int sequential = 0;	
    int prefetch   = 0;	
+   dmc->sort++;
    //VERIFY(spin_is_locked(&dmc->lock));
    for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
 
-         dmc->sort++;
+        
 		if (bio->bi_sector == seqio->most_recent_sector) {
 			/* Reread or write same sector again.  Ignore but move to head */
 			DPRINTK("skip_prefetch_queue: repeat");
@@ -262,8 +263,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 			}
 		}
 	}
-	if (!sequential) {
-		/* Record the start of some new i/o, maybe we'll spot it as 
+	if (!sequential) 		/* Record the start of some new i/o, maybe we'll spot it as 
 		 * sequential soon.  */
 		DPRINTK("skip_prefetch_queue: concluded that its random i/o");
 
