@@ -1446,8 +1446,8 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
 		    	
-		    	unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,1); 
-		    	return precache_read_miss(dmc, bio, precache_block,1);
+		    	unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
+		    	return precache_read_miss(dmc, bio, precache_block,res);
 		    } 
 			return 1;
 		}        
@@ -1457,9 +1457,9 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		{
 			dmc->sequential_reads1++;
 			cache[precache_block].ra->hit_readahead_marker=0;
-		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,0); 
+		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
 		   
-			return precache_read_miss(dmc, bio, precache_block,0); 
+			return precache_read_miss(dmc, bio, precache_block,res); 
 		}
 		
 	else if (2 == res) { 
@@ -1588,7 +1588,8 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 
 static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit)
 {
-	unsigned long max = max_sane_readahead(1000);
+	unsigned long num=1000;
+	unsigned long max = max_sane_readahead(num);
 
 	/*
 	 * start of file
@@ -1670,6 +1671,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	struct cacheblock *cache = dmc->cache;
 	unsigned int offset;
     sector_t request_block;
+    int i,j;
 
 	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
 	request_block = bio->bi_sector - offset;   
@@ -1688,12 +1690,12 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
     	request_block=cache[request_block].ra->start+cache[request_block].ra->size;
 
     }
-    int i;
-	for (i=0; i<cache[cache_block].ra->size ; i++)
+
+	for (i=0,j=0; i<cache[cache_block].ra->size ; i++)
 	{
 
         dmc->sequential_reads2++;
-		int j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
+		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
 
 		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
 		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
@@ -1932,7 +1934,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	sector_t localsize, i, order;
 	sector_t data_size, meta_size, dev_size;
 	unsigned long long cache_size;
-	int r = -EINVAL;
+	int r = -EINVAL,j;
 	
 
 	if (argc < 2) {
@@ -2098,7 +2100,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad6;
 	}
     dmc->sysctl_skip_seq_thresh_kb=6;
-	int j;
+
 		for (j = 0; j < PREMAX; j++) {
 		dmc->seq_recent_ios[j].most_recent_sector = 0;
 		dmc->seq_recent_ios[j].prefetch_length = 0;
