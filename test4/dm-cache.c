@@ -1430,13 +1430,14 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (bio_data_dir(bio) == READ)
 	{
-		dmc->reads++;
+		spin_lock(&dmc->lock);
 		prefetch=skip_prefetch_queue(dmc, bio);
+		spin_unlock(&dmc->lock);
 	}
 
 	if (prefetch)
 	{
-
+        dmc->sort++;
 		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
@@ -1444,7 +1445,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 			cache_hit(dmc, bio, cache_block);
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
-		    	dmc->sequential_reads1++;
+		    	
 		    	unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,1); 
 		    	return precache_read_miss(dmc, bio, precache_block,1);
 		    } 
@@ -1454,6 +1455,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		
 	else if (0 == res) 
 		{
+			dmc->sequential_reads1++;
 			cache[precache_block].ra->hit_readahead_marker=0;
 		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,0); 
 		   
@@ -2219,7 +2221,7 @@ static int cache_status(struct dm_target *ti, status_type_t type,
 	switch (type) {
 	case STATUSTYPE_INFO:
 		DMEMIT("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu),pre hits(%lu, 0.%lu)," \
-	           "replacement(%lu), replaced dirty blocks(%lu),"\
+	           "replacement(%lu), replaced dirty blocks(%lu)," \
 	           "pre0 blocks(%lu),pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu),sort blocks(%lu)",
 	           dmc->reads, dmc->writes, dmc->cache_hits,dmc->pre_hits,
 	           (dmc->reads + dmc->writes) > 0 ? \
