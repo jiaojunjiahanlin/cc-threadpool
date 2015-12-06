@@ -234,7 +234,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
    //VERIFY(spin_is_locked(&dmc->lock));
    for (seqio = dmc->seq_io_head; seqio != NULL && sequential == 0; seqio = seqio->next) { 
 
-        
+        printk("seqio != NULL && sequential == 0;");
 		if (bio->bi_sector == seqio->most_recent_sector) {
 			/* Reread or write same sector again.  Ignore but move to head */
 			DPRINTK("skip_prefetch_queue: repeat");
@@ -2130,6 +2130,7 @@ init:	/* Initialize the cache structs */
 			dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
 			dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
 			seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
+			printk("init  prefetch_queue ");
 	    }
 
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
