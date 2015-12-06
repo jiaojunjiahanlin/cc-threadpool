@@ -259,7 +259,6 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 					seqio->prefetch_length);
 				/* Sufficiently sequential */
 				prefetch = 1;
-				printk("prefetch = 1");
 			}
 		}
 	}
@@ -592,7 +591,7 @@ static int do_fetch(struct kcached_job *job)
 	unsigned int offset, head, tail, remaining, nr_vecs, idx = 0;
 	struct bio_vec *bvec;
 	struct page_list *pl;
-	printk("do_fetch");
+	//printk("do_fetch");
 	offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
 	head = to_bytes(offset);
 	tail = to_bytes(dmc->block_size) - bio->bi_size - head;
@@ -713,7 +712,7 @@ static int do_fetch(struct kcached_job *job)
 		job->bvec = bvec;
 		r = dm_io_async_bvec(1, &job->src, READ, job->bvec + idx,
 		                     io_callback, job);
-		printk("do_fetch end");
+		//printk("do_fetch end");
 
 		return r;
 	}
