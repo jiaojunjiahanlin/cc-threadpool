@@ -56,6 +56,7 @@
 #define DEFAULT_CACHE_SIZE	655360
 #define SEQ_CACHE_SIZE	2048
 #define PREMAX  128
+#define skip_limit  16
 #define DEFAULT_CACHE_ASSOC	1024
 #define DEFAULT_BLOCK_SIZE	8
 #define CONSECUTIVE_BLOCKS	512
@@ -153,7 +154,6 @@ struct cache_c {
 	struct prefetch_queue	seq_recent_ios[PREMAX];
 	struct prefetch_queue	*seq_io_head;
 	struct prefetch_queue 	*seq_io_tail;
-	int sysctl_skip_seq_thresh_kb;
 
 };
 
@@ -255,7 +255,7 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 				seq_io_move_to_lruhead(dmc, seqio);
 
 			/* Is it now sequential enough to be sure? (threshold expressed in kb) */
-			if (seqio->prefetch_length > dmc->sysctl_skip_seq_thresh_kb) {
+			if (seqio->prefetch_length > skip_limit) {
 				DPRINTK("skip_prefetch_queue: Sequential i/o detected, seq count now %lu", 
 					seqio->prefetch_length);
 				/* Sufficiently sequential */
@@ -2123,15 +2123,14 @@ init:	/* Initialize the cache structs */
 	ti->private = dmc;
 
 
-	dmc->sysctl_skip_seq_thresh_kb=6;
-
-		for (j = 0; j < PREMAX; j++) {
-		dmc->seq_recent_ios[j].most_recent_sector = 0;
-		dmc->seq_recent_ios[j].prefetch_length = 0;
-		dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
-		dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
-		seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
-	}
+	for (j = 0; j < PREMAX; j++) 
+		{
+			dmc->seq_recent_ios[j].most_recent_sector = 0;
+			dmc->seq_recent_ios[j].prefetch_length = 0;
+			dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
+			dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
+			seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
+	    }
 
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
 
