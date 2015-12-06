@@ -263,7 +263,8 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 			}
 		}
 	}
-	if (!sequential) 		/* Record the start of some new i/o, maybe we'll spot it as 
+	if (!sequential)
+	{ 		/* Record the start of some new i/o, maybe we'll spot it as 
 		 * sequential soon.  */
 		DPRINTK("skip_prefetch_queue: concluded that its random i/o");
 
