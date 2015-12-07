@@ -1557,12 +1557,12 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	res = i < SEQ_CACHE_SIZE ? 1 : 0;
 	if (!res) { /* Cache miss */
 		if (invalid != -1) /* Choose the first empty frame */
-			*precache_block = set_number * cache_assoc + invalid;
+			*precache_block = DEFAULT_CACHE_SIZE + invalid;
 		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
-			*precache_block = set_number * cache_assoc + oldest_clean;
+			*precache_block = DEFAULT_CACHE_SIZE + oldest_clean;
 		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
 			res = 2;
-			*precache_block = set_number * cache_assoc + oldest;
+			*precache_block = DEFAULT_CACHE_SIZE+ oldest;
 		} else {
 			res = -1;
 		}
@@ -1571,7 +1571,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	if (-1 == res)
 	{
 		DPRINTK("Cache lookup: Block %llu(%lu):%s",
-	            block, set_number, "NO ROOM");
+	            block, DEFAULT_CACHE_SIZE, "NO ROOM");
 		dmc->step4++;
 
 	}
@@ -1580,7 +1580,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	{
 
 		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
-		        block, set_number, *cache_block,
+		        block, DEFAULT_CACHE_SIZE, *cache_block,
 		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
 		dmc->step5++;
 
