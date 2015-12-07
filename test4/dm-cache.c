@@ -1456,7 +1456,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		
 	else if (0 == res) 
 		{
-			dmc->sort++;
+			
 			dmc->sequential_reads1++;
 			cache[precache_block].ra->hit_readahead_marker=0;
 		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
@@ -1470,7 +1470,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		dmc->writeback++;
 
 		}
-
+            dmc->sort++;
 		/* Forward to source device */
 		bio->bi_bdev = dmc->src_dev->bdev;
 		return 1;
@@ -1500,7 +1500,7 @@ DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
 	}
 
 	
-
+ 
 	/* Forward to source device */
 	bio->bi_bdev = dmc->src_dev->bdev;
 
