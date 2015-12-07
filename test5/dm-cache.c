@@ -56,7 +56,7 @@
 
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	655360
-#define SEQ_CACHE_SIZE	2048
+#define SEQ_CACHE_SIZE	204800
 #define PREMAX  128
 #define skip_limit  64
 #define DEFAULT_CACHE_ASSOC	1024
@@ -2099,7 +2099,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
 
-	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
+	order = (dmc->size) * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
@@ -2129,7 +2129,7 @@ init:	/* Initialize the cache structs */
     temp = (struct block_list *) vmalloc(dmc->size * (sizeof(struct block_list)));
     blocks = (struct rd_cacheblock *) vmalloc(dmc->size * (sizeof(struct rd_cacheblock)));
 
-     for (i=0; i < dmc->size; i++)
+     for (i=0; i < SEQ_CACHE_SIZE; i++)
         {
 		temp[i].block = &blocks[i];
                 bio_list_init(&temp[i].block->bios);
@@ -2140,8 +2140,6 @@ init:	/* Initialize the cache structs */
                 temp[i].block->cache=i+dmc->size;
                 list_add(&temp[i].list, dmc->lru);
         }
-
-	mod_timer(&dmc->flush_time, jiffies + msecs_to_jiffies(30000));
 
 	for (i=0; i< dmc->size; i++) {
 		bio_list_init(&dmc->cache[i].bios);
