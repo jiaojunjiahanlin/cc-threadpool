@@ -190,7 +190,7 @@ struct rd_cacheblock {
 };
 
 //LRU linked list
-struct rd_block_list{
+struct block_list{
 	struct rd_cacheblock * block;
 	struct list_head list;
 };
@@ -1284,10 +1284,10 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 	}
 }
 
-static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct cacheblock *cache)
+static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblock *cache)
 {
 	unsigned int offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
-	sector_t cache_block = cache->rd_cache;
+	sector_t cache_block = cache->cache;
 	list_move_tail(&cache->spot->list, dmc->lru);
 
 	dmc->cache_hits++;
