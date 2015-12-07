@@ -1472,7 +1472,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	sector_t request_block, offset;
 	int res;
 	int prefetch = 0;
-	struct cacheblock *cache_block;
+	struct rd_cacheblock *cache_block;
 
 	offset = bio->bi_sector & dmc->block_mask;
 	request_block = bio->bi_sector - offset;
