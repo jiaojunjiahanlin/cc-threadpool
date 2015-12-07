@@ -1434,22 +1434,23 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
-			cache_hit(dmc, bio, cache_block);
-		    if (cache[cache_block].ra->hit_readahead_marker)
-		    {
+			//cache_hit(dmc, bio, cache_block);
+		    //if (cache[cache_block].ra->hit_readahead_marker)
+		    //{
 		    	
-		    	unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
-		    	return precache_read_miss(dmc, bio, precache_block,res);
-		    } 
-			return 1;
+		    //	unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
+		    	//return precache_read_miss(dmc, bio, precache_block,res);
+		   // } 
+			//return 1;
+			return cache_hit(dmc, bio, cache_block);
 		}        
 		
 		
 	else if (0 == res) 
 		{
 			
-			cache[precache_block].ra->hit_readahead_marker=0;
-		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
+			//cache[precache_block].ra->hit_readahead_marker=0;
+		    //unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
 		   
 			return precache_read_miss(dmc, bio, precache_block,res); 
 		}
@@ -1510,7 +1511,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	int invalid = -1, oldest = -1, oldest_clean = -1;
 	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
 
-	index=DEFAULT_CACHE_SIZE;
+	index=DEFAULT_CACHE_SIZE+1;
 
 	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
 		if (is_state(cache[index].state, VALID) ||
@@ -1523,11 +1524,11 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 				cache[index].counter = ++dmc->counter;
 
-				if (cache[index].ra->hit_readahead_marker)
-						{
-							dmc->step1++;
-							continue;
-						}
+				//if (cache[index].ra->hit_readahead_marker)
+					//	{
+						//	dmc->step1++;
+					//		continue;
+						//}
 				break;
 			} else {
 				/* Don't consider blocks that are in the middle of copying */
@@ -1693,7 +1694,8 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 
     }
 
-	for (i=0,j=0; i<cache[cache_block].ra->size ; i++)
+	//for (i=0,j=0; i<cache[cache_block].ra->size ; i++)
+	for (i=0,j=0; i<64 ; i++)
 	{
 
        
