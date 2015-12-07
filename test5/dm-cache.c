@@ -187,7 +187,7 @@ struct rd_cacheblock {
         unsigned short state;   /* State of a block */
         unsigned long counter;  /* Logical timestamp of the block's last access */
         struct bio_list bios;   /* List of pending bios */
-	    struct rd_block_list *spot; 
+	    struct block_list *spot; 
 };
 
 //LRU linked list
