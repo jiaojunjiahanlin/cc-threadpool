@@ -56,7 +56,7 @@
 #define DEFAULT_CACHE_SIZE	655360
 #define SEQ_CACHE_SIZE	2048
 #define PREMAX  128
-#define skip_limit  16
+#define skip_limit  32
 #define DEFAULT_CACHE_ASSOC	1024
 #define DEFAULT_BLOCK_SIZE	8
 #define CONSECUTIVE_BLOCKS	512
@@ -1470,7 +1470,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		dmc->writeback++;
 
 		}
-            dmc->sort++;
+            
 		/* Forward to source device */
 		bio->bi_bdev = dmc->src_dev->bdev;
 		return 1;
@@ -1525,6 +1525,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	index=set_number * cache_assoc;
 
 	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
+		dmc->sort++;
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
