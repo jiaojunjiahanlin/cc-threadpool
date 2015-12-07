@@ -1506,7 +1506,6 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 {
 	sector_t index;
 	int i, res;
-	unsigned int cache_assoc = dmc->assoc;
 	struct cacheblock *cache = dmc->cache;
 	int invalid = -1, oldest = -1, oldest_clean = -1;
 	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
@@ -1551,7 +1550,6 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 			if (-1 == invalid) invalid = i;
 		}
 	}
-}
 
 	res = i < SEQ_CACHE_SIZE ? 1 : 0;
 	if (!res) { /* Cache miss */
