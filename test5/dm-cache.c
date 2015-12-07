@@ -1285,7 +1285,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct cacheblock *cache)
 {
 	unsigned int offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
-	sector_t cache_block = cache->cache;
+	sector_t cache_block = cache->rd_cache;
 	list_move_tail(&cache->spot->list, dmc->lru);
 
 	dmc->cache_hits++;
@@ -1501,22 +1501,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	return 1;
 }
 
-/*
- * Insert a block into the cache (in the frame specified by cache_block).
- */
-static int rd_cache_insert(struct cache_c *dmc, sector_t block,
-	                    struct cacheblock *cache)
-{
-	radix_tree_delete(dmc->cache, cache->block);
-	cache->block = block;
-	cache->state = RESERVED;
-	//if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
-	//cache->counter = ++dmc->counter;
-	radix_tree_insert(dmc->cache, block, (void *) cache);
-	list_move_tail(&cache->spot->list, dmc->lru);
 
-	return 1;
-}
 
 /****************************************************************************
  *  Functions for precache
