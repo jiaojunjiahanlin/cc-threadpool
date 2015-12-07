@@ -1517,7 +1517,6 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
-				if (cache[index].state, RESERVED) {
 					dmc->step0++;
 					*cache_block = index; 
 
@@ -2171,7 +2170,7 @@ static void cache_flush(struct cache_c *dmc)
 	unsigned int j;
 
 	DMINFO("Flush dirty blocks (%llu) ...", (unsigned long long) dmc->dirty_blocks);
-	while (i< dmc->size) {
+	while (i< dmc->size+SEQ_CACHE_SIZE) {
 		j = 1;
 		if (is_state(cache[i].state, DIRTY)) {
 			while ((i+j) < dmc->size && is_state(cache[i+j].state, DIRTY)
