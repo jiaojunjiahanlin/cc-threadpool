@@ -1469,10 +1469,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		      union map_info *map_context)
 {
 	struct cache_c *dmc = (struct cache_c *) ti->private;
-	sector_t request_block, cache_block = 0,precache_block= 0, offset;
+	sector_t request_block, offset;
 	int res;
 	int prefetch = 0;
-	struct cacheblock *cache = dmc->cache;
+	struct cacheblock *cache_block;
 
 	offset = bio->bi_sector & dmc->block_mask;
 	request_block = bio->bi_sector - offset;
@@ -1690,12 +1690,7 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
 	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
 	request_block = bio->bi_sector - offset;   
 
-	if (cache[cache_block].state & VALID) {
-		DPRINTK("Replacing %llu->%llu",
-		        cache[cache_block].block, request_block);
-		dmc->replace++;
-	} else DPRINTK("Insert block %llu at empty frame %llu",
-		request_block, cache_block);
+
 
     cache_read_miss(dmc, bio, 0);
 
