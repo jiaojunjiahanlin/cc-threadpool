@@ -116,6 +116,7 @@ struct cache_c {
 	struct dm_dev *cache_dev;	/* Cache device */
 	struct dm_kcopyd_client *kcp_client; /* Kcopyd client for writing back data */
 
+
 	struct cacheblock *cache;	/* Hash table for cache blocks */
 	struct radix_tree_root *rd_cache; 
 	sector_t size;			/* Cache size */
@@ -248,7 +249,8 @@ static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,
 static int rd_cache_insert(struct cache_c *dmc, sector_t block,
 	                    struct rd_cacheblock *cache);
 static int rd_cache_miss(struct cache_c *dmc, struct bio* bio);
-static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct cacheblock *cache);
+static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblock *cache);
+static void flush(struct cache_c * dmc);;
 
 
 
@@ -2144,8 +2146,6 @@ init:	/* Initialize the cache structs */
                 list_add(&temp[i].list, dmc->lru);
         }
 
-	INIT_WORK(&dmc->active_flush, active_flush);
-	setup_timer(&dmc->flush_time, (void *)flush, (unsigned long)dmc);
 	mod_timer(&dmc->flush_time, jiffies + msecs_to_jiffies(30000));
 
 	for (i=0; i< dmc->size; i++) {
