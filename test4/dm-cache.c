@@ -56,7 +56,7 @@
 #define DEFAULT_CACHE_SIZE	655360
 #define SEQ_CACHE_SIZE	2048
 #define PREMAX  128
-#define skip_limit  32
+#define skip_limit  64
 #define DEFAULT_CACHE_ASSOC	1024
 #define DEFAULT_BLOCK_SIZE	8
 #define CONSECUTIVE_BLOCKS	512
@@ -141,12 +141,12 @@ struct cache_c {
 	unsigned long replace;		/* Number of cache replacements */
 	unsigned long writeback;	/* Number of replaced dirty blocks */
 	unsigned long dirty;
-	unsigned long sequential_reads0;		/* Number of submitted dirty blocks */
-	unsigned long sequential_reads1;
-	unsigned long sequential_reads2;
-	unsigned long sequential_reads3;
-	unsigned long sequential_reads4;
-	unsigned long pre_hits;
+	unsigned long step0;		/* Number of submitted dirty blocks */
+	unsigned long step1;
+	unsigned long step2;
+	unsigned long step3;
+	unsigned long step4;
+	unsigned long step5;
 	unsigned long sort;
 	
 
@@ -278,12 +278,6 @@ int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio)
 		seqio->prefetch_length	  = 1;
 	}
 	DPRINTK("skip_prefetch_queue: complete.");
-	if (prefetch) {
-		if (bio_data_dir(bio) == READ)
-	        	dmc->sequential_reads0++;
-		else 
-	        	dmc->sequential_reads0++;
-	}
 
 	return prefetch;
 
@@ -1009,7 +1003,6 @@ static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,
 	src.bdev = dmc->src_dev->bdev;
 	src.sector = request_block;
 	src.count = dmc->block_size * length;
-	dmc->sequential_reads3++;
 
 	for (i=0; i<length; i++)
 		set_state(dmc->cache[index+i].state, RESERVED);
@@ -1019,7 +1012,6 @@ static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 	                   struct dm_io_region dest, struct cacheblock *cacheblock)
 {
-	dmc->sequential_reads4++;
 	DPRINTK("Copying: %llu:%llu->%llu:%llu",
 			src.sector, src.count * 512, dest.sector, dest.count * 512);
 	dm_kcopyd_copy(dmc->kcp_client, &src, 1, &dest, 0, \
@@ -1062,7 +1054,7 @@ static void cache_reset_counter(struct cache_c *dmc)
 	struct cacheblock *cache = dmc->cache;
 
 	DPRINTK("Reset LRU counters");
-	for (i=0; i<dmc->size; i++)
+	for (i=0; i<dmc->size+SEQ_CACHE_SIZE; i++)
 		cache[i].counter = 0;
 
 	dmc->counter = 0;
@@ -1442,7 +1434,6 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		res = precache_lookup(dmc, request_block, &cache_block,&precache_block);
 		if (1 == res)
 		{
-			dmc->pre_hits++;
 			cache_hit(dmc, bio, cache_block);
 		    if (cache[cache_block].ra->hit_readahead_marker)
 		    {
@@ -1457,7 +1448,6 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	else if (0 == res) 
 		{
 			
-			dmc->sequential_reads1++;
 			cache[precache_block].ra->hit_readahead_marker=0;
 		    unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
 		   
@@ -1514,7 +1504,6 @@ DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
 static int precache_lookup(struct cache_c *dmc, sector_t block,
 	                    sector_t *cache_block,sector_t *precache_block)
 {
-	unsigned long set_number = DEFAULT_CACHE_SIZE/DEFAULT_CACHE_ASSOC;
 	sector_t index;
 	int i, res;
 	unsigned int cache_assoc = dmc->assoc;
@@ -1522,14 +1511,14 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	int invalid = -1, oldest = -1, oldest_clean = -1;
 	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
 
-	index=set_number * cache_assoc;
+	index=DEFAULT_CACHE_SIZE;
 
 	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
-		dmc->sort++;
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
 				if (cache[index].state, RESERVED) {
+					dmc->step0++;
 					*cache_block = index; 
 
 				/* Reset all counters if the largest one is going to overflow */
@@ -1538,6 +1527,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 
 				if (cache[index].ra->hit_readahead_marker)
 						{
+							dmc->step1++;
 							continue;
 						}
 				break;
@@ -1549,10 +1539,12 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 					    cache[index].counter < clean_counter) { 
 						clean_counter = cache[index].counter;  
 						oldest_clean = i; 
+						dmc->step2++;
 					}
 					if (cache[index].counter < counter) {
 						counter = cache[index].counter;
 						oldest = i;
+						dmc->step3++;
 					}
 				}
 			}
@@ -1577,12 +1569,22 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	}
 
 	if (-1 == res)
+	{
 		DPRINTK("Cache lookup: Block %llu(%lu):%s",
 	            block, set_number, "NO ROOM");
+		dmc->step4++;
+
+	}
+		
 	else
+	{
+
 		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
 		        block, set_number, *cache_block,
 		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
+		dmc->step5++;
+
+	}
 	return res;
 }
 
@@ -1697,7 +1699,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	for (i=0,j=0; i<cache[cache_block].ra->size ; i++)
 	{
 
-        dmc->sequential_reads2++;
+       
 		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
 
 		cache_block=(cache_block-DEFAULT_CACHE_SIZE)+j*DEFAULT_BLOCK_SIZE;
@@ -2123,12 +2125,12 @@ init:	/* Initialize the cache structs */
 	dmc->dirty = 0;
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
-	dmc->sequential_reads0= 0;
-	dmc->sequential_reads1= 0;
-	dmc->sequential_reads2= 0;
-	dmc->sequential_reads3= 0;
-	dmc->sequential_reads4= 0;
-	dmc->pre_hits= 0;
+	dmc->step0= 0;
+	dmc->step1= 0;
+	dmc->step2= 0;
+	dmc->step3= 0;
+	dmc->step4= 0;
+	dmc->step5= 0;
 	dmc->sort= 0;
 
 	for (j = 0; j < PREMAX; j++) 
@@ -2203,7 +2205,7 @@ static void cache_dtr(struct dm_target *ti)
 	           "flushed dirty blocks(%lu), pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu)",
 		       dmc->reads, dmc->writes, dmc->cache_hits,
 		       dmc->cache_hits * 100 / (dmc->reads + dmc->writes),
-		       dmc->replace, dmc->writeback, dmc->dirty,dmc->sequential_reads1,dmc->sequential_reads2,dmc->sequential_reads3,dmc->sequential_reads4);
+		       dmc->replace, dmc->writeback, dmc->dirty,dmc->step1,dmc->step2,dmc->step3,dmc->step4);
 
 	dump_metadata(dmc); /* Always dump metadata to disk before exit */
 	vfree((void *)dmc->cache);
@@ -2228,11 +2230,11 @@ static int cache_status(struct dm_target *ti, status_type_t type,
 	switch (type) {
 	case STATUSTYPE_INFO:
 		DMEMIT("stats: reads(%lu), writes(%lu), cache hits(%lu, 0.%lu)," \
-	           "replacement(%lu), replaced dirty blocks(%lu),pre0 blocks(%lu),pre1 blocks(%lu),pre2 blocks(%lu),pre3 blocks(%lu),pre4 blocks(%lu),sort blocks(%lu)",
+	           "replacement(%lu), replaced dirty blocks(%lu),step0 blocks(%lu),step1 blocks(%lu),step2 blocks(%lu),step3 blocks(%lu),step4 blocks(%lu),step5 blocks(%lu),sort blocks(%lu)",
 	           dmc->reads, dmc->writes, dmc->cache_hits,
 	           (dmc->reads + dmc->writes) > 0 ? \
 	           dmc->cache_hits * 100 / (dmc->reads + dmc->writes) : 0,
-	           dmc->replace, dmc->writeback, dmc->sequential_reads0, dmc->pre_hits, dmc->sequential_reads2, dmc->sequential_reads3, dmc->sequential_reads4, dmc->sort);
+	           dmc->replace, dmc->writeback, dmc->step0, dmc->step1, dmc->step2, dmc->step3, dmc->step4,dmc->step5, dmc->sort);
 		break;
 	case STATUSTYPE_TABLE:
 		DMEMIT("conf: capacity(%lluM), associativity(%u), block size(%uK), %s",
