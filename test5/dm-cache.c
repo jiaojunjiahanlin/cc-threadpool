@@ -25,7 +25,7 @@
  *
  ****************************************************************************/
 #include <linux/blk_types.h>
-#include <linux/atomic.h>
+#include <asm/atomic.h>
 #include <asm/checksum.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -37,6 +37,8 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 #include <linux/pagemap.h>
+#include <linux/kthread.h>
+#include <linux/delay.h>
 #include "dm.h"
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>
