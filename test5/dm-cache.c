@@ -1442,12 +1442,14 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		    	//return precache_read_miss(dmc, bio, precache_block,res);
 		   // } 
 			//return 1;
+
 			return cache_hit(dmc, bio, cache_block);
 		}        
 		
 		
 	else if (0 == res) 
 		{
+			dmc->step1++;
 			
 			//cache[precache_block].ra->hit_readahead_marker=0;
 		    //unsigned long on= readahead(bio,cache[cache_block].ra,cache[precache_block].ra,request_block,res); 
@@ -1514,10 +1516,11 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	index=DEFAULT_CACHE_SIZE+1;
 
 	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
+		dmc->step0++;
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
-					dmc->step0++;
+					
 					*cache_block = index; 
 
 				/* Reset all counters if the largest one is going to overflow */
@@ -1526,7 +1529,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 
 				//if (cache[index].ra->hit_readahead_marker)
 					//	{
-						//	dmc->step1++;
+						//	
 					//		continue;
 						//}
 				break;
@@ -1536,12 +1539,12 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 					if (cache[index].counter < clean_counter) { 
 						clean_counter = cache[index].counter;  
 						oldest_clean = i; 
-						dmc->step2++;
+						
 					}
 					if (cache[index].counter < counter) {
 						counter = cache[index].counter;
 						oldest = i;
-						dmc->step3++;
+						
 					}
 				}
 			}
@@ -1570,7 +1573,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	{
 		DPRINTK("Cache lookup: Block %llu(%lu):%s",
 	            block, DEFAULT_CACHE_SIZE, "NO ROOM");
-		dmc->step4++;
+		
 
 	}
 		
@@ -1580,7 +1583,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
 		        block, DEFAULT_CACHE_SIZE, *cache_block,
 		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
-		dmc->step5++;
+	
 
 	}
 	return res;
@@ -1697,7 +1700,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	//for (i=0,j=0; i<cache[cache_block].ra->size ; i++)
 	for (i=0,j=0; i<32 ; i++)
 	{
-
+         dmc->step2++;
        
 		j=(((cache_block-DEFAULT_CACHE_SIZE*DEFAULT_BLOCK_SIZE)/DEFAULT_BLOCK_SIZE)+i)%SEQ_CACHE_SIZE;
 
