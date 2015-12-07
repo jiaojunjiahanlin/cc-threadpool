@@ -246,6 +246,7 @@ static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,
 static int rd_cache_insert(struct cache_c *dmc, sector_t block,
 	                    struct rd_cacheblock *cache);
 static int rd_cache_miss(struct cache_c *dmc, struct bio* bio);
+static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct cacheblock *cache);
 
 
 
@@ -1281,6 +1282,29 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 	}
 }
 
+static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct cacheblock *cache)
+{
+	unsigned int offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
+	sector_t cache_block = cache->cache;
+	list_move_tail(&cache->spot->list, dmc->lru);
+
+	dmc->cache_hits++;
+
+	if (bio_data_dir(bio) == READ) { /* READ hit */
+		bio->bi_bdev = dmc->cache_dev->bdev;
+		bio->bi_sector = (cache_block << dmc->block_shift)  + offset;
+
+		spin_lock(&cache->lock);
+
+		if (is_state(cache->state, VALID)) { /* Valid cache block */
+			spin_unlock(&cache->lock);
+			return 1;
+		}
+
+		spin_unlock(&cache->lock);
+		return 0;
+	} 
+}
 static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	                                       sector_t request_block,
                                            sector_t cache_block)
@@ -1459,10 +1483,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	if (prefetch)
 	{
 		dmc->reads++;
-		cache_block = radix_tree_lookup(dmc->cache, request_block);
+		cache_block = radix_tree_lookup(dmc->rd_cache, request_block);
 	    if (cache_block != NULL)
 			{
-				return cache_hit(dmc, bio, cache_block);
+				return rd_cache_hit(dmc, bio, cache_block);
 			}
 
 	          return rd_cache_miss(dmc, bio);
@@ -1670,7 +1694,6 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
 
 	struct list_head *next = dmc->lru;
 	struct rd_cacheblock *cache = list_first_entry(dmc->lru, struct block_list, list)->block;
-	struct cacheblock *cache = dmc->cache;
 	unsigned int offset;
     sector_t request_block;
     int i,j;
@@ -1687,13 +1710,6 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
 
     cache_read_miss(dmc, bio, 0);
 
-    if(hit)
-    {
-    	request_block=cache[request_block].ra->start+cache[request_block].ra->size;
-
-    }
-
-	//for (i=0,j=0; i<cache[cache_block].ra->size ; i++)
 	for (i=0,j=0; i<32 ; i++)
 	{
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
@@ -2123,16 +2139,29 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 init:	/* Initialize the cache structs */
 
 	dmc->rd_cache = (struct radix_tree_root *) vmalloc(sizeof(*dmc->rd_cache));
-	INIT_RADIX_TREE(dmc->cache, GFP_NOIO);
+	INIT_RADIX_TREE(dmc->rd_cache, GFP_NOIO);
 	dmc->lru = (struct list_head *)vmalloc(sizeof(*dmc->lru));
 	INIT_LIST_HEAD(dmc->lru);
     temp = (struct block_list *) vmalloc(dmc->size * (sizeof(struct block_list)));
-    blocks = (struct cacheblock *) vmalloc(dmc->size * (sizeof(struct cacheblock)));
+    blocks = (struct rd_cacheblock *) vmalloc(dmc->size * (sizeof(struct rd_cacheblock)));
+
+     for (i=0; i < dmc->size; i++)
+        {
+		temp[i].block = &blocks[i];
+                bio_list_init(&temp[i].block->bios);
+                if(!persistence) temp[i].block->state = 0;
+                temp[i].block->counter = 0;
+                spin_lock_init(&temp[i].block->lock);
+                temp[i].block->spot = &temp[i];
+                temp[i].block->cache=i+dmc->size;
+                list_add(&temp[i].list, dmc->lru);
+        }
+
 	INIT_WORK(&dmc->active_flush, active_flush);
 	setup_timer(&dmc->flush_time, (void *)flush, (unsigned long)dmc);
 	mod_timer(&dmc->flush_time, jiffies + msecs_to_jiffies(30000));
 
-	for (i=0; i< dmc->size+SEQ_CACHE_SIZE; i++) {
+	for (i=0; i< dmc->size; i++) {
 		bio_list_init(&dmc->cache[i].bios);
 		if(!persistence) dmc->cache[i].state = 0;
 		dmc->cache[i].counter = 0;
@@ -2156,6 +2185,7 @@ init:	/* Initialize the cache structs */
 	dmc->step4= 0;
 	dmc->step5= 0;
 	dmc->sort= 0;
+	dmc->shouldEnd = 0;
 
 	for (j = 0; j < PREMAX; j++) 
 		{
@@ -2233,6 +2263,7 @@ static void cache_dtr(struct dm_target *ti)
 
 	dump_metadata(dmc); /* Always dump metadata to disk before exit */
 	vfree((void *)dmc->cache);
+	vfree((void *)dmc->rd_cache);
 	dm_io_client_destroy(dmc->io_client);
 
 	dm_put_device(ti, dmc->src_dev);
