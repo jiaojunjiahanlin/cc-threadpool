@@ -251,7 +251,7 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block,sector_t cache_b
 
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
-	                   struct dm_io_region dest, struct rd_cacheblock *cacheblock);
+	                   struct dm_io_region dest, struct kc_job *job);
 static void precopy_callback(int read_err, unsigned int write_err, void *context);
 static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t request_block,unsigned int length);
 
@@ -261,6 +261,7 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio);
 static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblock *cache);
 static void flush(struct cache_c * dmc);
 static void rd_flush_bios(struct rd_cacheblock *cacheblock);
+static struct kc_job *new_kc_job(struct cache_c *dmc,  sector_t request_block, struct rd_cacheblock cache_block);
 
 
 
@@ -573,6 +574,20 @@ static int jobs_init(void)
 		return -ENOMEM;
 	}
 
+	kc_job_cache = kmem_cache_create("kc-jobs",
+	                               sizeof(struct kc_job),
+	                               __alignof__(struct kc_job),
+	                               0, NULL);
+	if (!kc_job_cache)
+		return -ENOMEM;
+
+	kc_job_pool = mempool_create(MIN_JOBS, mempool_alloc_slab,
+	                           mempool_free_slab, kc_job_cache);
+	if (!kc_job_pool) {
+		kmem_cache_destroy(kc_job_cache);
+		return -ENOMEM;
+	}
+
 	return 0;
 }
 
@@ -583,9 +598,13 @@ static void jobs_exit(void)
 	BUG_ON(!list_empty(&_pages_jobs));
 
 	mempool_destroy(_job_pool);
+	mempool_destroy(kc_job_pool);
 	kmem_cache_destroy(_job_cache);
+	kmem_cache_destroy(kc_job_cache);
 	_job_pool = NULL;
 	_job_cache = NULL;
+	kc_job_pool = NULL;
+	kc_job_cache = NULL;
 }
 
 /*
@@ -1066,6 +1085,7 @@ static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t r
 {
 	struct dm_io_region src, dest;
 	unsigned int i;
+	struct kc_job *job;
 
 	DPRINTK("Write back block %llu(%llu, %u)",
 	        index, cacheblock->block, length);
@@ -1093,11 +1113,11 @@ static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 static void precopy_callback(int read_err, unsigned int write_err, void *context)
 
 {
-	        struct kc_job job= (struct kc_job *) context;
+	        struct kc_job *job= (struct kc_job *) context;
 			struct rd_cacheblock *cacheblock = (struct rd_cacheblock *) job->cache;
 			rd_cache_insert(job->dmc, job->block, cacheblock);
 			rd_flush_bios(cacheblock);
-			kfree(job);
+			mempool_free(job, kc_job_pool);
 
 }
 
@@ -1378,10 +1398,10 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 }
 
 
-static struct kc_job *new_kc_job(struct cache_c *dmc,  sector_t request_block, struct rd_cacheblock cache_block)
+static struct kc_job *new_kc_job(struct cache_c *dmc,  sector_t request_block, struct rd_cacheblock *cache_block)
 {
 	struct kc_job *job;
-	job = (struct kc_job *) vmalloc(sizeof(struct kc_job));
+	job = mempool_alloc(kc_job_pool, GFP_NOIO);
 	job->dmc = dmc;
 	job->cache = cache_block;
 
