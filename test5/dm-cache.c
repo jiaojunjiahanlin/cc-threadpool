@@ -1696,17 +1696,17 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
     //cache_read_miss(dmc, bio, 0);
     bio->bi_bdev = dmc->src_dev->bdev;
     dmc->step3++;
-	for (i=0; i<32 ; i++)
-	{
-		dmc->step4++;
-        cache = list_first_entry(dmc->lru, struct block_list, list)->block;
-		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
-		bio->bi_sector=request_block;
-        rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
+	//for (i=0; i<32 ; i++)
+	//{
+	//	dmc->step4++;
+    //    cache = list_first_entry(dmc->lru, struct block_list, list)->block;
+	//	request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
+	//	bio->bi_sector=request_block;
+     //   rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
 
-	    pre_back(dmc, cache->cache,request_block, 1);
+	//    pre_back(dmc, cache->cache,request_block, 1);
 
-	}
+	//}
    dmc->step5++;
 	
 	return 1;
