@@ -1479,6 +1479,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (bio_data_dir(bio) == READ)
 	{
+		dmc->reads++;
 		spin_lock(&dmc->lock);
 		prefetch=skip_prefetch_queue(dmc, bio);
 		spin_unlock(&dmc->lock);
@@ -1486,7 +1487,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-		dmc->reads++;
+
 		cache_block = radix_tree_lookup(dmc->rd_cache, request_block);
 	    if (cache_block != NULL)
 			{
@@ -1696,17 +1697,17 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
     //cache_read_miss(dmc, bio, 0);
     bio->bi_bdev = dmc->src_dev->bdev;
     dmc->step3++;
-	//for (i=0; i<32 ; i++)
-	//{
-	//	dmc->step4++;
-    //    cache = list_first_entry(dmc->lru, struct block_list, list)->block;
-	//	request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
-	//	bio->bi_sector=request_block;
-     //   rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
+	for (i=1; i<32 ; i++)
+	{
+		dmc->step4++;
+        cache = list_first_entry(dmc->lru, struct block_list, list)->block;
+		request_block=request_block+(i << dmc->block_shift);
+		bio->bi_sector=request_block;
+        rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
 
-	//    pre_back(dmc, cache->cache,request_block, 1);
+	    pre_back(dmc, (cache->cache << dmc->block_shift),request_block, 1);
 
-	//}
+	}
    dmc->step5++;
 	
 	return 1;
@@ -2134,7 +2135,7 @@ init:	/* Initialize the cache structs */
 
      for (i=0; i < SEQ_CACHE_SIZE; i++)
         {
-		temp[i].block = &blocks[i];
+				temp[i].block = &blocks[i];
                 bio_list_init(&temp[i].block->bios);
                 if(!persistence) temp[i].block->state = 0;
                 temp[i].block->counter = 0;
