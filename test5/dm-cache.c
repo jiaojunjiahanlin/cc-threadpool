@@ -1695,12 +1695,11 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
     //cache_read_miss(dmc, bio, 0);
     bio->bi_bdev = dmc->src_dev->bdev;
     dmc->step3++;
-	for (i=1; i<32 ; i++)
+	for (i=1; i<32; i++)
 	{
 		dmc->step4++;
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
 		request_block=request_block+(i << dmc->block_shift);
-		bio->bi_sector=request_block;
 	    dmc->step5++;
         rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
         dmc->sort++;
