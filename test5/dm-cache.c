@@ -1086,7 +1086,6 @@ static void precopy_callback(int read_err, unsigned int write_err, void *context
 			struct rd_cacheblock *cacheblock = (struct rd_cacheblock *) context;
 
 			rd_flush_bios(cacheblock);
-			dmc->sort++;
 
 }
 
