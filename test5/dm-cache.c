@@ -1490,14 +1490,15 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		cache_block = radix_tree_lookup(dmc->rd_cache, request_block);
 	    if (cache_block != NULL)
 			{
+				dmc->step0++;
 				return rd_cache_hit(dmc, bio, cache_block);
 			}
-
+				dmc->step1++;
 	          return rd_cache_miss(dmc, bio);
 	     
 	}
 	
-
+     dmc->step2++;
 	
 	/* Forward to source device */
 	bio->bi_bdev = dmc->src_dev->bdev;
@@ -1523,7 +1524,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	index=DEFAULT_CACHE_SIZE+1;
 
 	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
-		dmc->step0++;
+		
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
@@ -1692,10 +1693,12 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
 
 
 
-    cache_read_miss(dmc, bio, 0);
-
-	for (i=0,j=0; i<32 ; i++)
+    //cache_read_miss(dmc, bio, 0);
+    bio->bi_bdev = dmc->src_dev->bdev;
+    dmc->step3++;
+	for (i=0; i<32 ; i++)
 	{
+		dmc->step4++;
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
 		request_block=request_block+(i)*DEFAULT_BLOCK_SIZE;
 		bio->bi_sector=request_block;
@@ -1704,9 +1707,9 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
 	    pre_back(dmc, cache->cache,request_block, 1);
 
 	}
-
+   dmc->step5++;
 	
-	return 0;
+	return 1;
 }
 
 
