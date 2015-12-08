@@ -550,7 +550,9 @@ static inline void wake(void)
 #define MIN_JOBS 1024
 
 static struct kmem_cache *_job_cache;
+static struct kmem_cache *kc_job_cache;
 static mempool_t *_job_pool;
+static mempool_t *kc_job_pool;
 
 static DEFINE_SPINLOCK(_job_lock);
 
