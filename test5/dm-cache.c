@@ -1053,22 +1053,21 @@ static void write_back(struct cache_c *dmc, sector_t index, unsigned int length)
 	copy_block(dmc, src, dest, cacheblock);
 }
 
-static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length)
+static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t request_block,unsigned int length)
 {
 	struct dm_io_region src, dest;
-	struct rd_cacheblock *cacheblock;
 	unsigned int i;
 
 	DPRINTK("Write back block %llu(%llu, %u)",
 	        index, cacheblock->block, length);
 	dest.bdev = dmc->cache_dev->bdev;
-	dest.sector = index << dmc->block_shift;
+	dest.sector = cache->cache<< dmc->block_shift;
 	dest.count = dmc->block_size * length;
 	src.bdev = dmc->src_dev->bdev;
 	src.sector = request_block;
 	src.count = dmc->block_size * length;
 
-	precopy_block(dmc, src, dest, cacheblock);
+	precopy_block(dmc, src, dest, cache);
 }
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
@@ -1737,7 +1736,7 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
 	  
         rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
            dmc->step4++;        
-	    pre_back(dmc, (cache->cache),request_block, 1);
+	    pre_back(dmc, cache,request_block, 1);
 
 
 	}
