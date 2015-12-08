@@ -250,10 +250,41 @@ static int rd_cache_insert(struct cache_c *dmc, sector_t block,
 	                    struct rd_cacheblock *cache);
 static int rd_cache_miss(struct cache_c *dmc, struct bio* bio);
 static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblock *cache);
-static void flush(struct cache_c * dmc);;
+static void flush(struct cache_c * dmc);
+static void rd_flush_bios(struct cacheblock *cacheblock);
 
 
 
+
+
+
+/*
+ * Flush the bios that are waiting for this cache insertion or write back.
+ */
+static void rd_flush_bios(struct rd_cacheblock *cacheblock)
+{
+	struct bio *bio;
+	struct bio *n;
+
+	spin_lock(&cacheblock->lock);
+	bio = bio_list_get(&cacheblock->bios);
+	if (is_state(cacheblock->state, WRITEBACK)) { /* Write back finished */
+		cacheblock->state = VALID;
+	} else { /* Cache insertion finished */
+		set_state(cacheblock->state, VALID);
+		clear_state(cacheblock->state, RESERVED);
+	}
+	spin_unlock(&cacheblock->lock);
+
+	while (bio) {
+		n = bio->bi_next;
+		bio->bi_next = NULL;
+		DPRINTK("Flush bio: %llu->%llu (%u bytes)",
+		        cacheblock->block, bio->bi_sector, bio->bi_size);
+		generic_make_request(bio);
+		bio = n;
+	}
+}
 
 /****************************************************************************
  *  prefetch is now
@@ -1043,6 +1074,7 @@ static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 	                   struct dm_io_region dest, struct rd_cacheblock *cacheblock)
 {
+	dmc->step5++;
 	DPRINTK("Copying: %llu:%llu->%llu:%llu",
 			src.sector, src.count * 512, dest.sector, dest.count * 512);
 	dm_kcopyd_copy(dmc->kcp_client, &src, 1, &dest, 0, \
@@ -1051,7 +1083,10 @@ static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 
 static void precopy_callback(int read_err, unsigned int write_err, void *context)
 {
-	struct rd_cacheblock *cacheblock = (struct rd_cacheblock *) context;
+			struct rd_cacheblock *cacheblock = (struct rd_cacheblock *) context;
+
+			rd_flush_bios(cacheblock);
+			dmc->sort++;
 
 }
 
@@ -1695,15 +1730,16 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
     //cache_read_miss(dmc, bio, 0);
     bio->bi_bdev = dmc->src_dev->bdev;
     dmc->step3++;
-	for (i=1; i<5; i++)
+	for (i=1; i<16; i++)
 	{
-		dmc->step4++;
+		
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
 		request_block=request_block+(i << dmc->block_shift);
-	    dmc->step5++;
+	  
         rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
-        dmc->sort++;
+           dmc->step4++;        
 	    pre_back(dmc, (cache->cache),request_block, 1);
+
 
 	}
  
