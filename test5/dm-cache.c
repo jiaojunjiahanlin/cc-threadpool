@@ -251,7 +251,7 @@ static int rd_cache_insert(struct cache_c *dmc, sector_t block,
 static int rd_cache_miss(struct cache_c *dmc, struct bio* bio);
 static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblock *cache);
 static void flush(struct cache_c * dmc);
-static void rd_flush_bios(struct cacheblock *cacheblock);
+static void rd_flush_bios(struct rd_cacheblock *cacheblock);
 
 
 
