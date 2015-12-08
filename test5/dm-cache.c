@@ -244,7 +244,7 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block,sector_t cache_b
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 	                   struct dm_io_region dest, struct rd_cacheblock *cacheblock);
 static void precopy_callback(int read_err, unsigned int write_err, void *context);
-static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length);
+static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t request_block,unsigned int length)
 
 static int rd_cache_insert(struct cache_c *dmc, sector_t block,
 	                    struct rd_cacheblock *cache);
