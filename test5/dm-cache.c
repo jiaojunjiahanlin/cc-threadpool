@@ -196,6 +196,15 @@ struct block_list{
 	struct list_head list;
 };
 
+//LRU linked list
+struct kc_job{
+
+	sector_t block;
+	struct rd_cacheblock *cache;
+	struct cache_c *dmc;
+
+};
+
 /*
  * Track a single file's readahead state
  */
@@ -1066,25 +1075,29 @@ static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t r
 	src.bdev = dmc->src_dev->bdev;
 	src.sector = request_block;
 	src.count = dmc->block_size * length;
+	job = new_kc_job(dmc, request_block, cache);
 
-	precopy_block(dmc, src, dest, cache);
+	precopy_block(dmc, src, dest, job);
 }
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
-	                   struct dm_io_region dest, struct rd_cacheblock *cacheblock)
+	                   struct dm_io_region dest, struct kc_job *job)
 {
 	dmc->step5++;
 	DPRINTK("Copying: %llu:%llu->%llu:%llu",
 			src.sector, src.count * 512, dest.sector, dest.count * 512);
 	dm_kcopyd_copy(dmc->kcp_client, &src, 1, &dest, 0, \
-			(dm_kcopyd_notify_fn) precopy_callback, (void *)cacheblock);
+			(dm_kcopyd_notify_fn) precopy_callback, (void *)job);
 }
 
 static void precopy_callback(int read_err, unsigned int write_err, void *context)
-{
-			struct rd_cacheblock *cacheblock = (struct rd_cacheblock *) context;
 
+{
+	        struct kc_job job= (struct kc_job *) context;
+			struct rd_cacheblock *cacheblock = (struct rd_cacheblock *) job->cache;
+			rd_cache_insert(job->dmc, job->block, cacheblock);
 			rd_flush_bios(cacheblock);
+			kfree(job);
 
 }
 
@@ -1323,8 +1336,8 @@ static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblo
 	sector_t cache_block = cache->cache;
 	list_move_tail(&cache->spot->list, dmc->lru);
 
-	dmc->cache_hits++;
 
+	 dmc->cache_hits++;
 	if (bio_data_dir(bio) == READ) { /* READ hit */
 		bio->bi_bdev = dmc->cache_dev->bdev;
 		bio->bi_sector = (cache_block << dmc->block_shift)  + offset;
@@ -1360,6 +1373,17 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	job->src = src;
 	job->dest = dest;
 	job->cacheblock = &dmc->cache[cache_block];
+
+	return job;
+}
+
+
+static struct kc_job *new_kc_job(struct cache_c *dmc,  sector_t request_block, struct rd_cacheblock cache_block)
+{
+	struct kc_job *job;
+	job = (struct kc_job *) vmalloc(sizeof(struct kc_job));
+	job->dmc = dmc;
+	job->cache = cache_block;
 
 	return job;
 }
@@ -1734,7 +1758,7 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
 		request_block=request_block+(i << dmc->block_shift);
 	  
-        rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
+        rd_cache_insert(dmc, 0, cache); /* Update metadata first */
            dmc->step4++;        
 	    pre_back(dmc, cache,request_block, 1);
 
@@ -1774,7 +1798,11 @@ static int rd_cache_insert(struct cache_c *dmc, sector_t block,
 	                    struct rd_cacheblock *cache)
 {
 	radix_tree_delete(dmc->rd_cache, cache->block);
-	cache->block = block;
+	if(block)
+	{
+		cache->block = block;
+	}
+	
 	cache->state = RESERVED;
 	//if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 	//cache->counter = ++dmc->counter;
