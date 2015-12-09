@@ -549,9 +549,9 @@ static inline void wake(void)
 #define MIN_JOBS 1024
 
 static struct kmem_cache *_job_cache;
-static struct kmem_cache *kc_job_cache;
+//static struct kmem_cache *kc_job_cache;
 static mempool_t *_job_pool;
-static mempool_t *kc_job_pool;
+//static mempool_t *kc_job_pool;
 
 static DEFINE_SPINLOCK(_job_lock);
 
@@ -575,19 +575,7 @@ static int jobs_init(void)
 		return -ENOMEM;
 	}
 
-	kc_job_cache = kmem_cache_create("kc-jobs",
-	                               sizeof(struct kc_job),
-	                               __alignof__(struct kc_job),
-	                               0, NULL);
-	if (!kc_job_cache)
-		return -ENOMEM;
 
-	kc_job_pool = mempool_create(MIN_JOBS, mempool_alloc_slab,
-	                           mempool_free_slab, kc_job_cache);
-	if (!kc_job_pool) {
-		kmem_cache_destroy(kc_job_cache);
-		return -ENOMEM;
-	}
 
 	return 0;
 }
@@ -599,13 +587,9 @@ static void jobs_exit(void)
 	BUG_ON(!list_empty(&_pages_jobs));
 
 	mempool_destroy(_job_pool);
-	mempool_destroy(kc_job_pool);
 	kmem_cache_destroy(_job_cache);
-	kmem_cache_destroy(kc_job_cache);
 	_job_pool = NULL;
 	_job_cache = NULL;
-	kc_job_pool = NULL;
-	kc_job_cache = NULL;
 }
 
 /*
@@ -1399,15 +1383,6 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 }
 
 
-static struct kc_job *new_kc_job(struct cache_c *dmc,  sector_t request_block, struct rd_cacheblock *cache_block)
-{
-	struct kc_job *job;
-	job = mempool_alloc(kc_job_pool, GFP_NOIO);
-	job->dmc = dmc;
-	job->cache = cache_block;
-
-	return job;
-}
 
 /*
  * Handle a read cache miss:
@@ -1773,7 +1748,7 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
     //cache_read_miss(dmc, bio, 0);
     bio->bi_bdev = dmc->src_dev->bdev;
     dmc->step3++;
-	for (i=1; i<12; i++)
+	for (i=1; i<2; i++)
 	{
 		
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
