@@ -25,7 +25,7 @@
  *
  ****************************************************************************/
 #include <linux/blk_types.h>
-#include <asm/atomic.h>
+#include <linux/atomic.h>
 #include <asm/checksum.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -37,8 +37,6 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 #include <linux/pagemap.h>
-#include <linux/kthread.h>
-#include <linux/delay.h>
 #include "dm.h"
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>
@@ -56,7 +54,7 @@
 
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	655360
-#define SEQ_CACHE_SIZE	204800
+#define SEQ_CACHE_SIZE	2048
 #define PREMAX  128
 #define skip_limit  64
 #define DEFAULT_CACHE_ASSOC	1024
@@ -116,9 +114,7 @@ struct cache_c {
 	struct dm_dev *cache_dev;	/* Cache device */
 	struct dm_kcopyd_client *kcp_client; /* Kcopyd client for writing back data */
 
-
 	struct cacheblock *cache;	/* Hash table for cache blocks */
-	struct radix_tree_root *rd_cache; 
 	sector_t size;			/* Cache size */
 	unsigned int bits;		/* Cache size in bits */
 	unsigned int assoc;		/* Cache associativity */
@@ -152,15 +148,6 @@ struct cache_c {
 	unsigned long step4;
 	unsigned long step5;
 	unsigned long sort;
-
-
-	int flushed;
-    int (*caching_algorithm)(struct cache_c *, sector_t, sector_t *);
-    int shouldEnd;
-	struct list_head *lru;
-
-	struct work_struct active_flush;
-    struct timer_list flush_time;
 	
 
 	/* Sequential I/O spotter */
@@ -174,38 +161,15 @@ struct cache_c {
 struct cacheblock {
 	spinlock_t lock;	/* Lock to protect operations on the bio list */
 	sector_t block;		/* Sector number of the cached block */
+	sector_t src_cache;
+	sector_t dest_cache;
+	struct cache_c *dmc;
 	unsigned short state;	/* State of a block */
 	unsigned long counter;	/* Logical timestamp of the block's last access */
 	struct bio_list bios;	/* List of pending bios */
 	struct pre_ra_state *ra;
 };
-/* Cache block metadata structure */
-struct rd_cacheblock {
-        spinlock_t lock;        /* Lock to protect operations on the bio list */
-        sector_t block;         /* Sector number of the cached block */
-	    sector_t cache;
-	    sector_t rd_cache;
-	    struct cache_c *dmc;
-        unsigned short state;   /* State of a block */
-        unsigned long counter;  /* Logical timestamp of the block's last access */
-        struct bio_list bios;   /* List of pending bios */
-	    struct block_list *spot; 
-};
 
-//LRU linked list
-struct block_list{
-	struct rd_cacheblock * block;
-	struct list_head list;
-};
-
-//LRU linked list
-struct kc_job{
-
-	sector_t block;
-	struct rd_cacheblock *cache;
-	struct cache_c *dmc;
-
-};
 
 /*
  * Track a single file's readahead state
@@ -243,58 +207,23 @@ void seq_io_remove_from_lru(struct cache_c *dmc, struct prefetch_queue *seqio);
 void seq_io_move_to_lruhead(struct cache_c *dmc, struct prefetch_queue *seqio);
 int skip_prefetch_queue(struct cache_c *dmc, struct bio *bio);
 
-static int precache_lookup(struct cache_c *dmc, sector_t block,sector_t *cache_block,sector_t *precache_block);
+static int precache_lookup(struct cache_c *dmc, sector_t block,sector_t *cache_block);
 static unsigned long readahead(struct bio *bio,struct pre_ra_state *prera,struct pre_ra_state *nextra, sector_t request_block,int hit);
+static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block);
 
 unsigned long max_sane_readahead(unsigned long nr);
 static unsigned long pre_init_ra_size(unsigned long size, unsigned long max);
 static unsigned long pre_next_ra_size(struct pre_ra_state *ra,unsigned long max);
-static int pre_cache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block,int i);
+static int pre_cache_insert(struct cache_c *dmc, sector_t block,sector_t cache_block);
 
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
-	                   struct dm_io_region dest, struct rd_cacheblock *cache);
+	                   struct dm_io_region dest, struct cacheblock *cacheblock);
 static void precopy_callback(int read_err, unsigned int write_err, void *context);
-static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t request_block,unsigned int length);
-
-static int rd_cache_insert(struct cache_c *dmc, sector_t block,
-	                    struct rd_cacheblock *cache);
-static int rd_cache_miss(struct cache_c *dmc, struct bio* bio);
-static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblock *cache);
-static void flush(struct cache_c * dmc);
-static void rd_flush_bios(struct rd_cacheblock *cacheblock);
+static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length);
 
 
 
-
-
-
-
-/*
- * Flush the bios that are waiting for this cache insertion or write back.
- */
-static void rd_flush_bios(struct rd_cacheblock *cacheblock)
-{
-	struct bio *bio;
-	struct bio *n;
-
-	spin_lock(&cacheblock->lock);
-	bio = bio_list_get(&cacheblock->bios);
-	
-	set_state(cacheblock->state, VALID);
-	clear_state(cacheblock->state, RESERVED);
-
-	spin_unlock(&cacheblock->lock);
-
-	while (bio) {
-		n = bio->bi_next;
-		bio->bi_next = NULL;
-		DPRINTK("Flush bio: %llu->%llu (%u bytes)",
-		        cacheblock->block, bio->bi_sector, bio->bi_size);
-		generic_make_request(bio);
-		bio = n;
-	}
-}
 
 /****************************************************************************
  *  prefetch is now
@@ -550,9 +479,7 @@ static inline void wake(void)
 #define MIN_JOBS 1024
 
 static struct kmem_cache *_job_cache;
-//static struct kmem_cache *kc_job_cache;
 static mempool_t *_job_pool;
-//static mempool_t *kc_job_pool;
 
 static DEFINE_SPINLOCK(_job_lock);
 
@@ -575,8 +502,6 @@ static int jobs_init(void)
 		kmem_cache_destroy(_job_cache);
 		return -ENOMEM;
 	}
-
-
 
 	return 0;
 }
@@ -1067,43 +992,41 @@ static void write_back(struct cache_c *dmc, sector_t index, unsigned int length)
 	copy_block(dmc, src, dest, cacheblock);
 }
 
-static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t request_block,unsigned int length)
+static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length)
 {
 	struct dm_io_region src, dest;
+	struct cacheblock *cacheblock = &dmc->cache[index];
 	unsigned int i;
-	//struct kc_job *job;
 
 	DPRINTK("Write back block %llu(%llu, %u)",
 	        index, cacheblock->block, length);
 	dest.bdev = dmc->cache_dev->bdev;
-	dest.sector = cache->cache<< dmc->block_shift;
+	dest.sector = index;
 	dest.count = dmc->block_size * length;
 	src.bdev = dmc->src_dev->bdev;
 	src.sector = request_block;
 	src.count = dmc->block_size * length;
-	//job = new_kc_job(dmc, request_block, cache);
 
-	precopy_block(dmc, src, dest, cache);
+	for (i=0; i<length; i++)
+	set_state(dmc->cache[index+i].state, RESERVED);
+	precopy_block(dmc, src, dest, cacheblock);
 }
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
-	                   struct dm_io_region dest, struct rd_cacheblock *cache)
+	                   struct dm_io_region dest, struct cacheblock *cacheblock)
 {
-	dmc->step5++;
 	DPRINTK("Copying: %llu:%llu->%llu:%llu",
 			src.sector, src.count * 512, dest.sector, dest.count * 512);
 	dm_kcopyd_copy(dmc->kcp_client, &src, 1, &dest, 0, \
-			(dm_kcopyd_notify_fn) precopy_callback, (void *)cache);
+			(dm_kcopyd_notify_fn) precopy_callback, (void *)cacheblock);
 }
 
 static void precopy_callback(int read_err, unsigned int write_err, void *context)
-
 {
-	        //struct kc_job *job= (struct kc_job *) context;
-			struct rd_cacheblock *cache = (struct rd_cacheblock *) context;
-             rd_cache_insert(cache->dmc, cache->rd_cache, cache);
-			rd_flush_bios(cache);
+	         struct cacheblock *cache = (struct cacheblock *) context;
 
+             pre_cache_insert(cache->dmc, cache->src_cache, cache->dest_cache);
+			 flush_bios(cache);
 
 }
 
@@ -1336,29 +1259,6 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 	}
 }
 
-static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblock *cache)
-{
-	unsigned int offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
-	sector_t cache_block = cache->cache;
-	list_move_tail(&cache->spot->list, dmc->lru);
-
-
-	 dmc->cache_hits++;
-	if (bio_data_dir(bio) == READ) { /* READ hit */
-		bio->bi_bdev = dmc->cache_dev->bdev;
-		bio->bi_sector = (cache_block << dmc->block_shift)  + offset;
-
-		spin_lock(&cache->lock);
-
-		if (is_state(cache->state, VALID)) { /* Valid cache block */
-			spin_unlock(&cache->lock);
-			return 1;
-		}
-
-		spin_unlock(&cache->lock);
-		return 0;
-	} 
-}
 static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	                                       sector_t request_block,
                                            sector_t cache_block)
@@ -1382,8 +1282,6 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 
 	return job;
 }
-
-
 
 /*
  * Handle a read cache miss:
@@ -1521,17 +1419,16 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		      union map_info *map_context)
 {
 	struct cache_c *dmc = (struct cache_c *) ti->private;
-	sector_t request_block, offset;
+	sector_t request_block, cache_block = 0,precache_block= 0, offset;
 	int res;
 	int prefetch = 0;
-	struct rd_cacheblock *cache_block;
+	struct cacheblock *cache = dmc->cache;
 
 	offset = bio->bi_sector & dmc->block_mask;
 	request_block = bio->bi_sector - offset;
 
 	if (bio_data_dir(bio) == READ)
 	{
-		dmc->reads++;
 		spin_lock(&dmc->lock);
 		prefetch=skip_prefetch_queue(dmc, bio);
 		spin_unlock(&dmc->lock);
@@ -1539,34 +1436,65 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
+		dmc->reads++;
+		res = precache_lookup(dmc, request_block, &cache_block);
+		if (1 == res)
+		{
+			
+			return cache_hit(dmc, bio, cache_block);
+		}        
+		
+		
+	else if (0 == res) 
+		{
+			
+					   
+			return precache_read_miss(dmc, bio, cache_block); 
+		}
+		
+            
+		/* Forward to source device */
+		bio->bi_bdev = dmc->src_dev->bdev;
+		return 1;
 
-		cache_block = radix_tree_lookup(dmc->rd_cache, request_block);
-	    if (cache_block != NULL)
-			{
-				dmc->step0++;
-				return rd_cache_hit(dmc, bio, cache_block);
-			}
-				dmc->step1++;
-	          return rd_cache_miss(dmc, bio);
 	     
 	}
+	else
+	{
+
+DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
+	        bio_rw(bio) == WRITE ? "WRITE" : (bio_rw(bio) == READ ?
+	        "READ":"READA"), bio->bi_sector, request_block, offset,
+	        bio->bi_size);
+
+	if (bio_data_dir(bio) == READ) dmc->reads++;
+	else dmc->writes++;
+
+	res = cache_lookup(dmc, request_block, &cache_block);
+	if (1 == res)  /* Cache hit; server request from cache */
+		return cache_hit(dmc, bio, cache_block);
+	else if (0 == res) /* Cache miss; replacement block is found */
+		return cache_miss(dmc, bio, cache_block);
+	else if (2 == res) { /* Entire cache set is dirty; initiate a write-back */
+		write_back(dmc, cache_block, 1);
+		dmc->writeback++;
+		}
+	}
+
 	
-     dmc->step2++;
-	
+ 
 	/* Forward to source device */
 	bio->bi_bdev = dmc->src_dev->bdev;
 
 	return 1;
 }
 
-
-
 /****************************************************************************
  *  Functions for precache
  ****************************************************************************/
 
 static int precache_lookup(struct cache_c *dmc, sector_t block,
-	                    sector_t *cache_block,sector_t *precache_block)
+	                    sector_t *cache_block)
 {
 	sector_t index;
 	int i, res;
@@ -1574,44 +1502,36 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	int invalid = -1, oldest = -1, oldest_clean = -1;
 	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
 
-	index=DEFAULT_CACHE_SIZE+1;
+	index=DEFAULT_CACHE_SIZE;
 
 	for (i=0; i<SEQ_CACHE_SIZE; i++, index++) {
-		
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
-					
 					*cache_block = index; 
-
 				/* Reset all counters if the largest one is going to overflow */
 				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 				cache[index].counter = ++dmc->counter;
 
-				//if (cache[index].ra->hit_readahead_marker)
-					//	{
-						//	
-					//		continue;
-						//}
 				break;
 			} else {
 				/* Don't consider blocks that are in the middle of copying */
-				if (!is_state(cache[index].state, RESERVED)) {
-					if (cache[index].counter < clean_counter) { 
+				if (!is_state(cache[index].state, RESERVED) &&
+				    !is_state(cache[index].state, WRITEBACK)) {
+					if (!is_state(cache[index].state, DIRTY) &&
+					    cache[index].counter < clean_counter) { 
 						clean_counter = cache[index].counter;  
 						oldest_clean = i; 
-						
+						dmc->step2++;
 					}
 					if (cache[index].counter < counter) {
 						counter = cache[index].counter;
 						oldest = i;
-						
+						dmc->step3++;
 					}
 				}
 			}
-		} 
-		else 
-		{
+		} else {
 			if (-1 == invalid) invalid = i;
 		}
 	}
@@ -1619,12 +1539,12 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	res = i < SEQ_CACHE_SIZE ? 1 : 0;
 	if (!res) { /* Cache miss */
 		if (invalid != -1) /* Choose the first empty frame */
-			*cache_block = DEFAULT_CACHE_SIZE + invalid+1;
+			*cache_block = DEFAULT_CACHE_SIZE + invalid;
 		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
-			*cache_block = DEFAULT_CACHE_SIZE + oldest_clean+1;
+			*cache_block = DEFAULT_CACHE_SIZE + oldest_clean;
 		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
 			res = 2;
-			*cache_block = DEFAULT_CACHE_SIZE+ oldest+1;
+			*cache_block = DEFAULT_CACHE_SIZE+ oldest;
 		} else {
 			res = -1;
 		}
@@ -1634,7 +1554,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 	{
 		DPRINTK("Cache lookup: Block %llu(%lu):%s",
 	            block, DEFAULT_CACHE_SIZE, "NO ROOM");
-		
+		dmc->step4++;
 
 	}
 		
@@ -1644,7 +1564,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
 		        block, DEFAULT_CACHE_SIZE, *cache_block,
 		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
-	
+		dmc->step5++;
 
 	}
 	return res;
@@ -1733,10 +1653,9 @@ static unsigned long pre_next_ra_size(struct pre_ra_state *ra,unsigned long max)
 	return min(newsize, max);
 }
 
-static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
+static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cache_block) {
 
-	struct list_head *next = dmc->lru;
-	struct rd_cacheblock *cache = list_first_entry(dmc->lru, struct block_list, list)->block;
+	struct cacheblock *cache = dmc->cache;
 	unsigned int offset;
     sector_t request_block;
     int i,j;
@@ -1744,32 +1663,34 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
 	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
 	request_block = bio->bi_sector - offset;   
 
+	if (cache[cache_block].state & VALID) {
+		DPRINTK("Replacing %llu->%llu",
+		        cache[cache_block].block, request_block);
+		dmc->replace++;
+	} else DPRINTK("Insert block %llu at empty frame %llu",
+		request_block, cache_block);
 
+    bio->bi_bdev = dmc->src_dev->bdev;  
 
-    //cache_read_miss(dmc, bio, 0);
-    bio->bi_bdev = dmc->src_dev->bdev;
-    dmc->step3++;
-	for (i=3; i<5; i++)
+	for (i=3,j=0; i<4 ; i++)
 	{
-		
-        cache = list_first_entry(dmc->lru, struct block_list, list)->block;
+		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
 		request_block=request_block+(i << dmc->block_shift);
-		cache->rd_cache=request_block;
-		cache->dmc=dmc;
-	  
-        /* Update metadata first */
-           dmc->step4++;        
-	    pre_back(dmc, cache,request_block, 1);
+		bio->bi_sector=request_block;
+		cache[cache_block].src_cache= request_block;
+		cache[cache_block].dmc= dmc;
+		cache[cache_block].dest_cache= cache_block;
+	    pre_back(dmc, cache_block,request_block, 1);
+	    precache_lookup(dmc, request_block, &cache_block);
 
+	} 
 
-	}
- 
 	
-	return 1;
+	return 0;
 }
 
 
-static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_block,int i)
+static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_block)
 {
 	struct cacheblock *cache = dmc->cache;
 
@@ -1781,28 +1702,6 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_
 	cache[cache_block].state = RESERVED;
 	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 	cache[cache_block].counter = ++dmc->counter;
-
-	return 1;
-}
-
-
-/*
- * Insert a block into the cache (in the frame specified by cache_block).
- */
-static int rd_cache_insert(struct cache_c *dmc, sector_t block,
-	                    struct rd_cacheblock *cache)
-{
-	radix_tree_delete(dmc->rd_cache, cache->block);
-	if(block)
-	{
-		cache->block = block;
-	}
-	
-	cache->state = RESERVED;
-	//if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
-	//cache->counter = ++dmc->counter;
-	radix_tree_insert(dmc->rd_cache, block, (void *) cache);
-	list_move_tail(&cache->spot->list, dmc->lru);
 
 	return 1;
 }
@@ -2002,10 +1901,6 @@ static int dump_metadata(struct cache_c *dmc) {
  */
 static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
-	struct list_head *ptr;
-	struct block_list * temp;
-	struct rd_cacheblock *blocks;
-
 	struct cache_c *dmc;
 	unsigned int consecutive_blocks, persistence = 0;
 	sector_t localsize, i, order;
@@ -2158,7 +2053,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
 
-	order = (dmc->size) * sizeof(struct cacheblock);
+	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
@@ -2180,27 +2075,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 
 init:	/* Initialize the cache structs */
-
-	dmc->rd_cache = (struct radix_tree_root *) vmalloc(sizeof(*dmc->rd_cache));
-	INIT_RADIX_TREE(dmc->rd_cache, GFP_NOIO);
-	dmc->lru = (struct list_head *)vmalloc(sizeof(*dmc->lru));
-	INIT_LIST_HEAD(dmc->lru);
-    temp = (struct block_list *) vmalloc(dmc->size * (sizeof(struct block_list)));
-    blocks = (struct rd_cacheblock *) vmalloc(dmc->size * (sizeof(struct rd_cacheblock)));
-
-     for (i=0; i < SEQ_CACHE_SIZE; i++)
-        {
-				temp[i].block = &blocks[i];
-                bio_list_init(&temp[i].block->bios);
-                if(!persistence) temp[i].block->state = 0;
-                temp[i].block->counter = 0;
-                spin_lock_init(&temp[i].block->lock);
-                temp[i].block->spot = &temp[i];
-                temp[i].block->cache=i+dmc->size;
-                list_add(&temp[i].list, dmc->lru);
-        }
-
-	for (i=0; i< dmc->size; i++) {
+	for (i=0; i< dmc->size+SEQ_CACHE_SIZE; i++) {
 		bio_list_init(&dmc->cache[i].bios);
 		if(!persistence) dmc->cache[i].state = 0;
 		dmc->cache[i].counter = 0;
@@ -2224,7 +2099,6 @@ init:	/* Initialize the cache structs */
 	dmc->step4= 0;
 	dmc->step5= 0;
 	dmc->sort= 0;
-	dmc->shouldEnd = 0;
 
 	for (j = 0; j < PREMAX; j++) 
 		{
@@ -2264,7 +2138,7 @@ static void cache_flush(struct cache_c *dmc)
 	unsigned int j;
 
 	DMINFO("Flush dirty blocks (%llu) ...", (unsigned long long) dmc->dirty_blocks);
-	while (i< dmc->size) {
+	while (i< dmc->size+SEQ_CACHE_SIZE) {
 		j = 1;
 		if (is_state(cache[i].state, DIRTY)) {
 			while ((i+j) < dmc->size && is_state(cache[i+j].state, DIRTY)
@@ -2302,7 +2176,6 @@ static void cache_dtr(struct dm_target *ti)
 
 	dump_metadata(dmc); /* Always dump metadata to disk before exit */
 	vfree((void *)dmc->cache);
-	vfree((void *)dmc->rd_cache);
 	dm_io_client_destroy(dmc->io_client);
 
 	dm_put_device(ti, dmc->src_dev);
