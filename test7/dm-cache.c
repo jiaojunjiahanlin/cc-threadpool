@@ -185,6 +185,7 @@ struct rd_cacheblock {
         sector_t block;         /* Sector number of the cached block */
 	    sector_t cache;
 	    sector_t rd_cache;
+	    struct cache_c *dmc;
         unsigned short state;   /* State of a block */
         unsigned long counter;  /* Logical timestamp of the block's last access */
         struct bio_list bios;   /* List of pending bios */
@@ -1100,9 +1101,9 @@ static void precopy_callback(int read_err, unsigned int write_err, void *context
 {
 	        //struct kc_job *job= (struct kc_job *) context;
 			struct rd_cacheblock *cache = (struct rd_cacheblock *) context;
-            cache->block=cache->rd_cache;
+             rd_cache_insert(cache->dmc, cache->rd_cache, cache);
 			rd_flush_bios(cache);
-			//mempool_free(job, kc_job_pool);
+
 
 }
 
@@ -1754,8 +1755,9 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
 		request_block=request_block+(i << dmc->block_shift);
 		cache->rd_cache=request_block;
+		cache->dmc=dmc;
 	  
-        rd_cache_insert(dmc, 0, cache); /* Update metadata first */
+        /* Update metadata first */
            dmc->step4++;        
 	    pre_back(dmc, cache,request_block, 1);
 
