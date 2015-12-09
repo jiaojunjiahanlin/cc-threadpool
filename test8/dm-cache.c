@@ -198,14 +198,6 @@ struct block_list{
 	struct list_head list;
 };
 
-//LRU linked list
-struct kc_job{
-
-	sector_t block;
-	struct rd_cacheblock *cache;
-	struct cache_c *dmc;
-
-};
 
 /*
  * Track a single file's readahead state
@@ -226,7 +218,7 @@ struct kcached_job {
 	struct bio *bio;	/* Original bio */
 	struct dm_io_region src;
 	struct dm_io_region dest;
-	struct cacheblock *cacheblock;
+	struct rd_cacheblock *cacheblock;
 	int rw;
 	/*
 	 * When the original bio is not aligned with cache blocks,
@@ -264,6 +256,9 @@ static int rd_cache_hit(struct cache_c *dmc, struct bio* bio, struct rd_cacheblo
 static void flush(struct cache_c * dmc);
 static void rd_flush_bios(struct rd_cacheblock *cacheblock);
 static int rd_cache_read_miss(struct cache_c *dmc, struct bio* bio);
+static struct kcached_job *rd_new_kcached_job(struct cache_c *dmc, struct bio* bio,
+	                                       sector_t request_block,
+                                           struct cacheblock *cache);
 
 
 
@@ -1384,7 +1379,30 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	return job;
 }
 
+static struct kcached_job *rd_new_kcached_job(struct cache_c *dmc, struct bio* bio,
+	                                       sector_t request_block,
+                                           struct cacheblock *cache)
+{
+	struct dm_io_region src, dest;
+	struct kcached_job *job;
 
+
+	src.bdev = dmc->src_dev->bdev;
+	src.sector = request_block;
+	src.count = dmc->block_size;
+	dest.bdev = dmc->cache_dev->bdev;
+	dest.sector = cache->cache << dmc->block_shift;
+	dest.count = src.count;
+
+	job = mempool_alloc(_job_pool, GFP_NOIO);
+	job->dmc = dmc;
+	job->bio = bio;
+	job->src = src;
+	job->dest = dest;
+	job->cacheblock = cache;
+
+	return job;
+}
 
 /*
  * Handle a read cache miss:
@@ -1454,9 +1472,9 @@ static int rd_cache_read_miss(struct cache_c *dmc, struct bio* bio) {
 	} else DMINFO("Insert block %llu at empty frame %llu",
 		request_block, cache->cache);
 
-	cache_insert(dmc, request_block, cache); /* Update metadata first */
+	rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
 
-	job = new_kcached_job(dmc, bio, request_block, cache);
+	job = rd_new_kcached_job(dmc, bio, request_block, cache);
 
 	head = to_bytes(offset);
 
