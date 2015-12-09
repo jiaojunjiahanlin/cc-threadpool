@@ -1749,7 +1749,7 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
     //cache_read_miss(dmc, bio, 0);
     bio->bi_bdev = dmc->src_dev->bdev;
     dmc->step3++;
-	for (i=16; i<18; i++)
+	for (i=3; i<5; i++)
 	{
 		
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
