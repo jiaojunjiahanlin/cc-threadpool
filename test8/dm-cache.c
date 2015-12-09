@@ -276,10 +276,12 @@ static void rd_flush_bios(struct rd_cacheblock *cacheblock)
 
 	spin_lock(&cacheblock->lock);
 	bio = bio_list_get(&cacheblock->bios);
-	
-	set_state(cacheblock->state, VALID);
-	clear_state(cacheblock->state, RESERVED);
-
+	if (is_state(cacheblock->state, WRITEBACK)) { /* Write back finished */
+		cacheblock->state = VALID;
+	} else { /* Cache insertion finished */
+		set_state(cacheblock->state, VALID);
+		clear_state(cacheblock->state, RESERVED);
+	}
 	spin_unlock(&cacheblock->lock);
 
 	while (bio) {
@@ -931,7 +933,7 @@ static int do_complete(struct kcached_job *job)
 		kcached_put_pages(job->dmc, job->pages);
 	}
 
-	flush_bios(job->cacheblock);
+	rd_flush_bios(job->cacheblock);
 	mempool_free(job, _job_pool);
 
 	if (atomic_dec_and_test(&job->dmc->nr_jobs))
