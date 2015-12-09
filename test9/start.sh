@@ -8,6 +8,6 @@ mount /dev/mapper/pcache /mnt/dmcache/
 cd /mnt/dmcache/
 
 
-dd if=/dev/zero of=2G.file bs=1G count=2
+dd if=/dev/zero of=2G.file bs=300M count=1
 
 dmsetup status
