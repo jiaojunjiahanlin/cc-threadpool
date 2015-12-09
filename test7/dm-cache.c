@@ -1117,7 +1117,7 @@ static void precopy_callback(int read_err, unsigned int write_err, void *context
 	        //struct kc_job *job= (struct kc_job *) context;
 			struct rd_cacheblock *cache = (struct rd_cacheblock *) context;
             cache->block=cache->rd_cache;
-			rd_flush_bios(cacheblock);
+			rd_flush_bios(cache);
 			//mempool_free(job, kc_job_pool);
 
 }
