@@ -184,6 +184,7 @@ struct rd_cacheblock {
         spinlock_t lock;        /* Lock to protect operations on the bio list */
         sector_t block;         /* Sector number of the cached block */
 	    sector_t cache;
+	    sector_t rd_cache;
         unsigned short state;   /* State of a block */
         unsigned long counter;  /* Logical timestamp of the block's last access */
         struct bio_list bios;   /* List of pending bios */
@@ -251,7 +252,7 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block,sector_t cache_b
 
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
-	                   struct dm_io_region dest, struct kc_job *job);
+	                   struct dm_io_region dest, struct rd_cacheblock *cache);
 static void precopy_callback(int read_err, unsigned int write_err, void *context);
 static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t request_block,unsigned int length);
 
@@ -278,12 +279,10 @@ static void rd_flush_bios(struct rd_cacheblock *cacheblock)
 
 	spin_lock(&cacheblock->lock);
 	bio = bio_list_get(&cacheblock->bios);
-	if (is_state(cacheblock->state, WRITEBACK)) { /* Write back finished */
-		cacheblock->state = VALID;
-	} else { /* Cache insertion finished */
-		set_state(cacheblock->state, VALID);
-		clear_state(cacheblock->state, RESERVED);
-	}
+	
+	set_state(cacheblock->state, VALID);
+	clear_state(cacheblock->state, RESERVED);
+
 	spin_unlock(&cacheblock->lock);
 
 	while (bio) {
@@ -1087,7 +1086,7 @@ static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t r
 {
 	struct dm_io_region src, dest;
 	unsigned int i;
-	struct kc_job *job;
+	//struct kc_job *job;
 
 	DPRINTK("Write back block %llu(%llu, %u)",
 	        index, cacheblock->block, length);
@@ -1097,29 +1096,29 @@ static void pre_back(struct cache_c *dmc, struct rd_cacheblock *cache,sector_t r
 	src.bdev = dmc->src_dev->bdev;
 	src.sector = request_block;
 	src.count = dmc->block_size * length;
-	job = new_kc_job(dmc, request_block, cache);
+	//job = new_kc_job(dmc, request_block, cache);
 
-	precopy_block(dmc, src, dest, job);
+	precopy_block(dmc, src, dest, cache);
 }
 
 static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
-	                   struct dm_io_region dest, struct kc_job *job)
+	                   struct dm_io_region dest, struct rd_cacheblock *cache)
 {
 	dmc->step5++;
 	DPRINTK("Copying: %llu:%llu->%llu:%llu",
 			src.sector, src.count * 512, dest.sector, dest.count * 512);
 	dm_kcopyd_copy(dmc->kcp_client, &src, 1, &dest, 0, \
-			(dm_kcopyd_notify_fn) precopy_callback, (void *)job);
+			(dm_kcopyd_notify_fn) precopy_callback, (void *)cache);
 }
 
 static void precopy_callback(int read_err, unsigned int write_err, void *context)
 
 {
-	        struct kc_job *job= (struct kc_job *) context;
-			struct rd_cacheblock *cacheblock = (struct rd_cacheblock *) job->cache;
-			rd_cache_insert(job->dmc, job->block, cacheblock);
+	        //struct kc_job *job= (struct kc_job *) context;
+			struct rd_cacheblock *cache = (struct rd_cacheblock *) context;
+            cache->block=cache->rd_cache;
 			rd_flush_bios(cacheblock);
-			mempool_free(job, kc_job_pool);
+			//mempool_free(job, kc_job_pool);
 
 }
 
@@ -1774,11 +1773,12 @@ static int rd_cache_miss(struct cache_c *dmc, struct bio* bio) {
     //cache_read_miss(dmc, bio, 0);
     bio->bi_bdev = dmc->src_dev->bdev;
     dmc->step3++;
-	for (i=1; i<4; i++)
+	for (i=1; i<12; i++)
 	{
 		
         cache = list_first_entry(dmc->lru, struct block_list, list)->block;
 		request_block=request_block+(i << dmc->block_shift);
+		cache->rd_cache=request_block;
 	  
         rd_cache_insert(dmc, 0, cache); /* Update metadata first */
            dmc->step4++;        
