@@ -1438,7 +1438,7 @@ static int cache_read_miss(struct cache_c *dmc, struct bio* bio,
 
 static int rd_cache_read_miss(struct cache_c *dmc, struct bio* bio) {
 	struct list_head *next = dmc->lru;
-	struct cacheblock *cache = list_first_entry(dmc->lru, struct block_list, list)->block;
+	struct rd_cacheblock *cache = list_first_entry(dmc->lru, struct block_list, list)->block;
 
 	unsigned int offset, head, tail;
 	struct kcached_job *job;
