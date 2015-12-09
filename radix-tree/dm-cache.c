@@ -1603,7 +1603,7 @@ if (argc < 2) {
 		}
 	}
 	if (1 == persistence) {
-		if (load_metadata(dmc)) {
+		if (0) {
 			ti->error = "dm-cache: Invalid cache configuration";
 			r = -EINVAL;
 			goto bad6;
