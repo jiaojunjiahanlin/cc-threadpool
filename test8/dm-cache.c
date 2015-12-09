@@ -258,7 +258,7 @@ static void rd_flush_bios(struct rd_cacheblock *cacheblock);
 static int rd_cache_read_miss(struct cache_c *dmc, struct bio* bio);
 static struct kcached_job *rd_new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	                                       sector_t request_block,
-                                           struct cacheblock *cache);
+                                           struct rd_cacheblock *cache);
 
 
 
@@ -1381,7 +1381,7 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 
 static struct kcached_job *rd_new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	                                       sector_t request_block,
-                                           struct cacheblock *cache)
+                                           struct rd_cacheblock *cache)
 {
 	struct dm_io_region src, dest;
 	struct kcached_job *job;
@@ -1465,12 +1465,6 @@ static int rd_cache_read_miss(struct cache_c *dmc, struct bio* bio) {
 	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
 	request_block = bio->bi_sector - offset;
 
-	if (cache->state & VALID) {
-		DMINFO("Replacing %llu->%llu",
-		        cache->cache, request_block);
-		dmc->replace++;
-	} else DMINFO("Insert block %llu at empty frame %llu",
-		request_block, cache->cache);
 
 	rd_cache_insert(dmc, request_block, cache); /* Update metadata first */
 
