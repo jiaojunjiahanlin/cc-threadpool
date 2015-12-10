@@ -1661,7 +1661,6 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	{
 		cache[cache_block].state = RESERVED;
 		request_block=request_block+(i << dmc->block_shift);
-		bio->bi_sector=request_block;
 		cache[cache_block].src_cache= request_block;
 		cache[cache_block].dmc= dmc;
 		cache[cache_block].dest_cache= cache_block;
