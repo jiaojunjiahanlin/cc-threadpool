@@ -221,6 +221,7 @@ static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 	                   struct dm_io_region dest, struct cacheblock *cacheblock);
 static void precopy_callback(int read_err, unsigned int write_err, void *context);
 static void pre_back(struct cache_c *dmc, sector_t index,sector_t request_block,unsigned int length);
+static int pre_cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block);
 
 
 
@@ -1204,6 +1205,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 
 		if (is_state(cache[cache_block].state, VALID)) { /* Valid cache block */
 			spin_unlock(&cache[cache_block].lock);
+			dmc->step5++;
 			return 1;
 		}
 
@@ -1260,6 +1262,58 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 		return 1;
 	}
 }
+
+static int pre_cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
+{
+	unsigned int offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
+	struct cacheblock *cache = dmc->cache;
+	sector_t request_block ;
+	sector_t src_request_block;
+	sector_t src_cache_block;
+	
+
+
+	dmc->cache_hits++;
+
+	if (bio_data_dir(bio) == READ) { /* READ hit */
+		bio->bi_bdev = dmc->cache_dev->bdev;
+		bio->bi_sector = (cache_block << dmc->block_shift)  + offset;
+        src_request_block = bio->bi_sector - offset;  
+		spin_lock(&cache[cache_block].lock);
+
+		if (is_state(cache[cache_block].state, VALID)) { /* Valid cache block */
+			spin_unlock(&cache[cache_block].lock);
+			for (i=3; i<5 ; i++)
+				{
+					precache_lookup(dmc, 62914561, &src_cache_block);
+					request_block=src_request_block+(i << dmc->block_shift);
+					cache[src_cache_block].src_cache= request_block;
+					cache[src_cache_block].dmc= dmc;
+					cache[src_cache_block].dest_cache= cache_block;
+					cache_insert(dmc, request_block, src_cache_block);
+				    pre_back(dmc, src_cache_block,request_block, 1);
+				    
+
+				} 
+
+			return 1;
+		}
+
+		/* Cache block is not ready yet */
+		DPRINTK("Add to bio list %s(%llu)",
+				dmc->cache_dev->name, bio->bi_sector);
+		bio_list_add(&cache[cache_block].bios, bio);
+
+		spin_unlock(&cache[cache_block].lock);
+		dmc->step1++;
+		return 0;
+	} 
+}
+
+
+
+    
+
 
 static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	                                       sector_t request_block,
@@ -1642,10 +1696,12 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	struct cacheblock *cache = dmc->cache;
 	unsigned int offset;
     sector_t request_block;
+    sector_t src_request_block;
     int i,j;
 
 	offset = (unsigned int)(bio->bi_sector & dmc->block_mask);
-	request_block = bio->bi_sector - offset;   
+	request_block = bio->bi_sector - offset;  
+	src_request_block=request_block;
 
 	if (cache[cache_block].state & VALID) {
 		DPRINTK("Replacing %llu->%llu",
@@ -1673,6 +1729,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 	
 	return 1;
 }
+
 
 
 static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_block)
