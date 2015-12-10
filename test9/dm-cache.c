@@ -1026,8 +1026,8 @@ static void precopy_callback(int read_err, unsigned int write_err, void *context
 	         struct cacheblock *cache = (struct cacheblock *) context;
 
              pre_cache_insert(cache->dmc, cache->src_cache, cache->dest_cache);
-             cache->dmc->sort++;
 			 flush_bios(cache);
+			 cache->dmc->sort++;
 
 }
 
@@ -1213,6 +1213,7 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 		bio_list_add(&cache[cache_block].bios, bio);
 
 		spin_unlock(&cache[cache_block].lock);
+		dmc->step1++;
 		return 0;
 	} else { /* WRITE hit */
 		if (dmc->write_policy == WRITE_THROUGH) { /* Invalidate cached data */
@@ -1441,7 +1442,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		res = precache_lookup(dmc, request_block, &cache_block);
 		if (1 == res)
 		{
-			
+			dmc->step0++;
 			return cache_hit(dmc, bio, cache_block);
 		}        
 		
@@ -1449,7 +1450,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	else if (0 == res) 
 		{
 			
-					   
+			dmc->step2++;   
 			return precache_read_miss(dmc, bio, cache_block); 
 		}
 		
@@ -1509,26 +1510,23 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 		if (is_state(cache[index].state, VALID) ||
 		    is_state(cache[index].state, RESERVED)) {
 			if (cache[index].block == block) {
-					*cache_block = index; 
+				*cache_block = index;
 				/* Reset all counters if the largest one is going to overflow */
 				if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 				cache[index].counter = ++dmc->counter;
-
 				break;
 			} else {
 				/* Don't consider blocks that are in the middle of copying */
 				if (!is_state(cache[index].state, RESERVED) &&
 				    !is_state(cache[index].state, WRITEBACK)) {
 					if (!is_state(cache[index].state, DIRTY) &&
-					    cache[index].counter < clean_counter) { 
-						clean_counter = cache[index].counter;  
-						oldest_clean = i; 
-						dmc->step2++;
+					    cache[index].counter < clean_counter) {
+						clean_counter = cache[index].counter;
+						oldest_clean = i;
 					}
 					if (cache[index].counter < counter) {
 						counter = cache[index].counter;
 						oldest = i;
-						dmc->step3++;
 					}
 				}
 			}
@@ -1551,23 +1549,7 @@ static int precache_lookup(struct cache_c *dmc, sector_t block,
 		}
 	}
 
-	if (-1 == res)
-	{
-		DPRINTK("Cache lookup: Block %llu(%lu):%s",
-	            block, DEFAULT_CACHE_SIZE, "NO ROOM");
-		dmc->step4++;
 
-	}
-		
-	else
-	{
-
-		DPRINTK("Cache lookup: Block %llu(%lu):%llu(%s)",
-		        block, DEFAULT_CACHE_SIZE, *cache_block,
-		        1 == res ? "HIT" : (0 == res ? "MISS" : "WB NEEDED"));
-		dmc->step5++;
-
-	}
 	return res;
 }
 
@@ -1672,18 +1654,18 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
 		request_block, cache_block);
 
     bio->bi_bdev = dmc->src_dev->bdev;  
+    dmc->step4++;
 
-	for (i=3,j=0; i<4 ; i++)
+	for (i=3; i<4 ; i++)
 	{
 		cache[cache_block].state = RESERVED;
-		j=(((cache_block-DEFAULT_CACHE_SIZE*8)/8)+i)%SEQ_CACHE_SIZE;
 		request_block=request_block+(i << dmc->block_shift);
 		bio->bi_sector=request_block;
 		cache[cache_block].src_cache= request_block;
 		cache[cache_block].dmc= dmc;
 		cache[cache_block].dest_cache= cache_block;
 	    pre_back(dmc, cache_block,request_block, 1);
-	    precache_lookup(dmc, request_block, &cache_block);
+	    precache_lookup(dmc, -1, &cache_block);
 
 	} 
 
