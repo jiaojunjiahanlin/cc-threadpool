@@ -1682,8 +1682,8 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_
 	/* Mark the block as RESERVED because although it is allocated, the data are
        not in place until kcopyd finishes its job.
 	 */
-    cache[cache_block].state = VALID;
-	cache[cache_block].block = RESERVED;
+    cache[cache_block].state = RESERVED;
+	cache[cache_block].block = block;
 	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 	cache[cache_block].counter = ++dmc->counter;
 
