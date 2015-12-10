@@ -54,7 +54,7 @@
 
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	655360
-#define SEQ_CACHE_SIZE	2048
+#define SEQ_CACHE_SIZE	20480
 #define PREMAX  128
 #define skip_limit  64
 #define DEFAULT_CACHE_ASSOC	1024
@@ -1657,17 +1657,17 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
     bio->bi_bdev = dmc->src_dev->bdev;  
     dmc->step4++;
 
-	for (i=3; i<4 ; i++)
-	{
-		cache[cache_block].state = RESERVED;
-		request_block=request_block+(i << dmc->block_shift);
-		cache[cache_block].src_cache= request_block;
-		cache[cache_block].dmc= dmc;
-		cache[cache_block].dest_cache= cache_block;
-	    pre_back(dmc, cache_block,request_block, 1);
-	    precache_lookup(dmc, -1, &cache_block);
+	//for (i=3; i<4 ; i++)
+	//{
+	//	cache[cache_block].state = RESERVED;
+	//	request_block=request_block+(i << dmc->block_shift);
+	//	cache[cache_block].src_cache= request_block;
+	//	cache[cache_block].dmc= dmc;
+	//	cache[cache_block].dest_cache= cache_block;
+	 //   pre_back(dmc, cache_block,request_block, 1);
+	 //   precache_lookup(dmc, 62914561, &cache_block);
 
-	} 
+	//} 
 
 	
 	return 0;
@@ -1681,9 +1681,8 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_
 	/* Mark the block as RESERVED because although it is allocated, the data are
        not in place until kcopyd finishes its job.
 	 */
-
+    cache[cache_block].state = VALID;
 	cache[cache_block].block = block;
-	cache[cache_block].state = VALID;
 	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 	cache[cache_block].counter = ++dmc->counter;
 
