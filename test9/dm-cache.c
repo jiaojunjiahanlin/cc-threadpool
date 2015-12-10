@@ -1657,20 +1657,20 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
     bio->bi_bdev = dmc->src_dev->bdev;  
     dmc->step4++;
 
-	//for (i=3; i<4 ; i++)
-	//{
-	//	cache[cache_block].state = RESERVED;
-	//	request_block=request_block+(i << dmc->block_shift);
-	//	cache[cache_block].src_cache= request_block;
-	//	cache[cache_block].dmc= dmc;
-	//	cache[cache_block].dest_cache= cache_block;
-	 //   pre_back(dmc, cache_block,request_block, 1);
-	 //   precache_lookup(dmc, 62914561, &cache_block);
+	for (i=3; i<4 ; i++)
+	{
+		cache[cache_block].state = RESERVED;
+		request_block=request_block+(i << dmc->block_shift);
+		cache[cache_block].src_cache= request_block;
+		cache[cache_block].dmc= dmc;
+		cache[cache_block].dest_cache= cache_block;
+	    pre_back(dmc, cache_block,request_block, 1);
+	    precache_lookup(dmc, 62914561, &cache_block);
 
-	//} 
+	} 
 
 	
-	return 0;
+	return 1;
 }
 
 
