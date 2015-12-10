@@ -1431,6 +1431,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (bio_data_dir(bio) == READ)
 	{
+		dmc->reads++;
 		spin_lock(&dmc->lock);
 		prefetch=skip_prefetch_queue(dmc, bio);
 		spin_unlock(&dmc->lock);
@@ -1438,7 +1439,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-		dmc->reads++;
+		
 		res = precache_lookup(dmc, request_block, &cache_block);
 		if (1 == res)
 		{
@@ -1683,7 +1684,7 @@ static int pre_cache_insert(struct cache_c *dmc, sector_t block, sector_t cache_
 	 */
 
 	cache[cache_block].block = block;
-	cache[cache_block].state = RESERVED;
+	cache[cache_block].state = VALID;
 	if (dmc->counter == ULONG_MAX) cache_reset_counter(dmc);
 	cache[cache_block].counter = ++dmc->counter;
 
@@ -1970,7 +1971,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			goto bad6;
 		}
 	} else
-		dmc->block_size = DEFAULT_BLOCK_SIZE;
+	dmc->block_size = DEFAULT_BLOCK_SIZE;
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
 
