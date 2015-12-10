@@ -56,7 +56,7 @@
 #define DEFAULT_CACHE_SIZE	655360
 #define SEQ_CACHE_SIZE	2048
 #define PREMAX  128
-#define skip_limit  64
+#define skip_limit  100
 #define DEFAULT_CACHE_ASSOC	1024
 #define DEFAULT_BLOCK_SIZE	8
 #define CONSECUTIVE_BLOCKS	512
