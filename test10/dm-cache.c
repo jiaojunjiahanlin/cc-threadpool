@@ -1270,6 +1270,7 @@ static int pre_cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_bl
 	sector_t request_block ;
 	sector_t src_request_block;
 	sector_t src_cache_block;
+	int i;
 	
 
 
@@ -1498,7 +1499,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		if (1 == res)
 		{
 			dmc->step0++;
-			return cache_hit(dmc, bio, cache_block);
+			return pre_cache_hit(dmc, bio, cache_block);
 		}        
 		
 		
