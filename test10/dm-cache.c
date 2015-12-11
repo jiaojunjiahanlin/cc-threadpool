@@ -54,9 +54,9 @@
 
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	655360
-#define SEQ_CACHE_SIZE	2048
+#define SEQ_CACHE_SIZE	3048
 #define PREMAX  128
-#define skip_limit  100
+#define skip_limit  64
 #define DEFAULT_CACHE_ASSOC	1024
 #define DEFAULT_BLOCK_SIZE	8
 #define CONSECUTIVE_BLOCKS	512
@@ -1284,18 +1284,18 @@ static int pre_cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_bl
 
 		if (is_state(cache[cache_block].state, VALID)) { /* Valid cache block */
 			spin_unlock(&cache[cache_block].lock);
-			//for (i=15; i<16 ; i++)
-			//	{
-				//	precache_lookup(dmc, 62914561, &src_cache_block);
-				//	request_block=src_request_block+(i << dmc->block_shift);
-				//	cache[src_cache_block].src_cache= request_block;
-				//	cache[src_cache_block].dmc= dmc;
-				//	cache[src_cache_block].dest_cache= cache_block;
-				//	cache_insert(dmc, request_block, src_cache_block);
-				//    pre_back(dmc, src_cache_block,request_block, 1);
+			for (i=15; i<16 ; i++)
+				{
+					precache_lookup(dmc, 62914561, &src_cache_block);
+					request_block=src_request_block+(i << dmc->block_shift);
+					cache[src_cache_block].src_cache= request_block;
+					cache[src_cache_block].dmc= dmc;
+					cache[src_cache_block].dest_cache= cache_block;
+					cache_insert(dmc, request_block, src_cache_block);
+				   pre_back(dmc, src_cache_block,request_block, 1);
 				    
 
-			//	} 
+				} 
 
 			return 1;
 		}
