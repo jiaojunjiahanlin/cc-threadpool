@@ -1025,7 +1025,7 @@ static void precopy_block(struct cache_c *dmc, struct dm_io_region src,
 static void precopy_callback(int read_err, unsigned int write_err, void *context)
 {
 	         struct cacheblock *cache = (struct cacheblock *) context;
-             cacheblock->state = VALID;
+             cache->state = VALID;
              //pre_cache_insert(cache->dmc, cache->src_cache, cache->dest_cache);
 			 flush_bios(cache);
 			 cache->dmc->sort++;
