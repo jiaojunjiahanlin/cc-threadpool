@@ -1714,7 +1714,7 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
     bio->bi_bdev = dmc->src_dev->bdev;  
     dmc->step4++;
 
-	for (i=30; i<33 ; i++)
+	for (i=10; i<11 ; i++)
 	{
 		
 		request_block=request_block+(i << dmc->block_shift);
