@@ -1284,18 +1284,18 @@ static int pre_cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_bl
 
 		if (is_state(cache[cache_block].state, VALID)) { /* Valid cache block */
 			spin_unlock(&cache[cache_block].lock);
-			for (i=3; i<5 ; i++)
-				{
-					precache_lookup(dmc, 62914561, &src_cache_block);
-					request_block=src_request_block+(i << dmc->block_shift);
-					cache[src_cache_block].src_cache= request_block;
-					cache[src_cache_block].dmc= dmc;
-					cache[src_cache_block].dest_cache= cache_block;
-					cache_insert(dmc, request_block, src_cache_block);
-				    pre_back(dmc, src_cache_block,request_block, 1);
+			//for (i=15; i<16 ; i++)
+			//	{
+				//	precache_lookup(dmc, 62914561, &src_cache_block);
+				//	request_block=src_request_block+(i << dmc->block_shift);
+				//	cache[src_cache_block].src_cache= request_block;
+				//	cache[src_cache_block].dmc= dmc;
+				//	cache[src_cache_block].dest_cache= cache_block;
+				//	cache_insert(dmc, request_block, src_cache_block);
+				//    pre_back(dmc, src_cache_block,request_block, 1);
 				    
 
-				} 
+			//	} 
 
 			return 1;
 		}
@@ -1714,18 +1714,18 @@ static int precache_read_miss(struct cache_c *dmc, struct bio* bio, sector_t cac
     bio->bi_bdev = dmc->src_dev->bdev;  
     dmc->step4++;
 
-	//for (i=3; i<4 ; i++)
-	//{
+	for (i=15; i<16 ; i++)
+	{
 		
-		//request_block=request_block+(i << dmc->block_shift);
-	//	cache[cache_block].src_cache= request_block;
-	//	cache[cache_block].dmc= dmc;
-	//	cache[cache_block].dest_cache= cache_block;
-	//	cache_insert(dmc, request_block, cache_block);
-	//    pre_back(dmc, cache_block,request_block, 1);
-	 //   precache_lookup(dmc, 62914561, &cache_block);
+		request_block=request_block+(i << dmc->block_shift);
+		cache[cache_block].src_cache= request_block;
+		cache[cache_block].dmc= dmc;
+		cache[cache_block].dest_cache= cache_block;
+		cache_insert(dmc, request_block, cache_block);
+	    pre_back(dmc, cache_block,request_block, 1);
+	    precache_lookup(dmc, 62914561, &cache_block);
 
-	//} 
+	} 
 
 	
 	return 1;
