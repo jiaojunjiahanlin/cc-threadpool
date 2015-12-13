@@ -191,8 +191,8 @@ struct kcached_job {
 	struct dm_io_region dest;
 	struct cacheblock *cacheblock;
 	int rw;
-	unsigned int block_size=0;
-	unsigned int block_mask=0;	
+	unsigned int block_size;
+	unsigned int block_mask;	
 	/*
 	 * When the original bio is not aligned with cache blocks,
 	 * we need extra bvecs and pages for padding.
@@ -1331,6 +1331,8 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	job->src = src;
 	job->dest = dest;
 	job->cacheblock = &dmc->cache[cache_block];
+	job->block_size=0;
+	job->block_mask=0;
 
 	return job;
 }
