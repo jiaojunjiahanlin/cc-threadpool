@@ -893,8 +893,9 @@ static int do_complete(struct kcached_job *job)
 		kfree(job->bvec);
 		kcached_put_pages(job->dmc, job->pages);
 	}
-    job->dmc->sort++;
+  
 	flush_bios(job->cacheblock);
+	job->dmc->sort++;
 	mempool_free(job, _job_pool);
 
 	if (atomic_dec_and_test(&job->dmc->nr_jobs))
