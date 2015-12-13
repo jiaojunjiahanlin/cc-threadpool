@@ -2045,53 +2045,54 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	sector_t data_size, meta_size, dev_size;
 	unsigned long long cache_size;
 	int r = -EINVAL,j;
-	
+	printk("init  1 ");
 
 	if (argc < 2) {
 		ti->error = "dm-cache: Need at least 2 arguments (src dev and cache dev)";
 		goto bad;
 	}
-
+    printk("init  2 ");
 	dmc = kmalloc(sizeof(*dmc), GFP_KERNEL);
 	if (dmc == NULL) {
 		ti->error = "dm-cache: Failed to allocate cache context";
 		r = ENOMEM;
 		goto bad;
 	}
-
+     printk("init  3 ");
 	r = dm_get_device(ti, argv[0],
 			  dm_table_get_mode(ti->table), &dmc->src_dev);
 	if (r) {
 		ti->error = "dm-cache: Source device lookup failed";
 		goto bad1;
 	}
-
+    printk("init  4 ");
 	r = dm_get_device(ti, argv[1],
 			  dm_table_get_mode(ti->table), &dmc->cache_dev);
 	if (r) {
 		ti->error = "dm-cache: Cache device lookup failed";
 		goto bad2;
 	}
-
+    printk("init 5  ");
 	dmc->io_client = dm_io_client_create();
 	if (IS_ERR(dmc->io_client)) {
 		r = PTR_ERR(dmc->io_client);
 		ti->error = "Failed to create io client\n";
 		goto bad3;
 	}
-
+    printk("init  6 ");
 	dmc->kcp_client = dm_kcopyd_client_create();
 	if (dmc->kcp_client == NULL) {
 		ti->error = "Failed to initialize kcopyd client\n";
 		goto bad4;
 	}
+	printk("init  7 ");
 
 	r = kcached_init(dmc);
 	if (r) {
 		ti->error = "Failed to initialize kcached";
 		goto bad5;
 	}
-
+    printk("init  8 ");
 	if (argc >= 3) {
 		if (sscanf(argv[2], "%u", &persistence) != 1) {
 			ti->error = "dm-cache: Invalid cache persistence";
@@ -2099,6 +2100,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			goto bad6;
 		}
 	}
+	printk("init  9 ");
 	if (1 == persistence) {
 		if (load_metadata(dmc)) {
 			ti->error = "dm-cache: Invalid cache configuration";
@@ -2111,7 +2113,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			r = -EINVAL;
 			goto bad6;
 	}
-
+     printk("init  10 ");
 	if (argc >= 4) {
 		if (sscanf(argv[3], "%u", &dmc->block_size) != 1) {
 			ti->error = "dm-cache: Invalid block size";
@@ -2144,7 +2146,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		dmc->size = DEFAULT_CACHE_SIZE;
 	localsize = dmc->size;
 	dmc->bits = ffs(dmc->size) - 1;
-
+    printk("init  11 ");
 	if (argc >= 6) {
 		if (sscanf(argv[5], "%u", &dmc->assoc) != 1) {
 			ti->error = "dm-cache: Invalid cache associativity";
@@ -2190,7 +2192,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		}
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
-
+        printk("init  12 ");
 	order = (dmc->size*2) * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
@@ -2210,7 +2212,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad6;
 	}
     
-
+printk("init 13 ");
 
 init:	/* Initialize the cache structs */
 	for (i=0; i< dmc->size*2; i++) {
@@ -2219,7 +2221,7 @@ init:	/* Initialize the cache structs */
 		dmc->cache[i].counter = 0;
 		spin_lock_init(&dmc->cache[i].lock);
 	}
-
+  printk("init  14 ");
 	dmc->counter = 0;
 	dmc->dirty_blocks = 0;
 	dmc->reads = 0;
@@ -2228,8 +2230,10 @@ init:	/* Initialize the cache structs */
 	dmc->replace = 0;
 	dmc->writeback = 0;
 	dmc->dirty = 0;
+	printk("init  15 ");
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
+	printk("init  16 ");
 	dmc->step0= 0;
 	dmc->step1= 0;
 	dmc->step2= 0;
@@ -2245,7 +2249,6 @@ init:	/* Initialize the cache structs */
 			dmc->seq_recent_ios[j].prev = (struct prefetch_queue *)NULL;
 			dmc->seq_recent_ios[j].next = (struct prefetch_queue *)NULL;
 			seq_io_move_to_lruhead(dmc, &dmc->seq_recent_ios[j]);
-			printk("init  prefetch_queue ");
 	    }
 
 	dmc->seq_io_tail = &dmc->seq_recent_ios[0];
