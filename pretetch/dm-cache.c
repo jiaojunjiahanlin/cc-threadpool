@@ -875,7 +875,6 @@ static void flush_bios(struct cacheblock *cacheblock)
 		generic_make_request(bio);
 		bio = n;
 	}
-	cacheblock->dmc->sort++;
 }
 
 static int do_complete(struct kcached_job *job)
