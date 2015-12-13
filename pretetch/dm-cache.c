@@ -66,7 +66,7 @@
 #define DEFAULT_WRITE_POLICY WRITE_THROUGH
 
 /* Number of pages for I/O */
-#define DMCACHE_COPY_PAGES 1024
+#define DMCACHE_COPY_PAGES 4096
 
 /* States of a cache block */
 #define INVALID		0
@@ -756,12 +756,14 @@ static int do_store(struct kcached_job *job)
 			offset = (unsigned int) (bio->bi_sector & job->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(job->block_size) - bio->bi_size - head;
+			dmc->step3++;
 
 			
 	}else{
 		    offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
+			dmc->step4++;
 			
 
 	}
@@ -1321,12 +1323,8 @@ static struct kcached_job *pf_new_kcached_job(struct cache_c *dmc, struct bio* b
 	src.sector = request_block;
 	src.count = block_size;
 	dest.bdev = dmc->cache_dev->bdev;
-	dest.sector = cache_block << dmc->block_shift;
-	if(block_shift > 0)
-	{
-        dest.sector = (dmc->size << dmc->block_shift)+((cache_block-dmc->size) << block_shift);
-	}
-	
+
+    dest.sector = (dmc->size << dmc->block_shift)+((cache_block-dmc->size) << block_shift);
 	dest.count = src.count;
 
 	job = mempool_alloc(_job_pool, GFP_NOIO);
