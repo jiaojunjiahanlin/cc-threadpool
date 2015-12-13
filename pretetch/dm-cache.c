@@ -1312,14 +1312,14 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 
 static struct kcached_job *pf_new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	                                       sector_t request_block,
-                                           sector_t cache_block,unsigned int block_shift)
+                                           sector_t cache_block,unsigned int block_shift,unsigned int block_size)
 {
 	struct dm_io_region src, dest;
 	struct kcached_job *job;
 
 	src.bdev = dmc->src_dev->bdev;
 	src.sector = request_block;
-	src.count = dmc->block_size;
+	src.count = block_size;
 	dest.bdev = dmc->cache_dev->bdev;
 	dest.sector = cache_block << dmc->block_shift;
 	if(block_shift > 0)
@@ -1716,7 +1716,7 @@ static int pf_cache_read_miss(struct cache_c *dmc, struct bio* bio,
 
 	cache_insert(dmc, request_block, cache_block); /* Update metadata first */
 	block_shift = ffs(block_size) - 1;
-	job = pf_new_kcached_job(dmc, bio, request_block, cache_block,block_shift);
+	job = pf_new_kcached_job(dmc, bio, request_block, cache_block,block_shift,block_size);
 	job->block_mask=block_mask;
 	job->block_size=block_size;
 
