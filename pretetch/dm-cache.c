@@ -886,14 +886,14 @@ static int do_complete(struct kcached_job *job)
 	struct bio *bio = job->bio;
     struct cache_c *dmc;
 	DPRINTK("do_complete: %llu", bio->bi_sector);
-
+    dmc=job->dmc;
 	bio_endio(bio, 0);
 
 	if (job->nr_pages > 0) {
 		kfree(job->bvec);
 		kcached_put_pages(job->dmc, job->pages);
 	}
-  	dmc=job->dmc;
+  	
 	flush_bios(job->cacheblock);
 	mempool_free(job, _job_pool);
 
