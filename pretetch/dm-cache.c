@@ -600,7 +600,7 @@ static int do_fetch(struct kcached_job *job)
 	struct page_list *pl;
 	//printk("do_fetch");
 
-		if(job->block_mask)
+		if(job->block_mask > 0)
 	{
 			offset = (unsigned int) (bio->bi_sector & job->block_mask);
 			head = to_bytes(offset);
@@ -751,7 +751,7 @@ static int do_store(struct kcached_job *job)
 	struct cache_c *dmc = job->dmc;
 	unsigned int offset, head, tail, remaining, nr_vecs;
 	struct bio_vec *bvec;
-	if(job->block_mask)
+	if(job->block_mask > 0)
 	{
 			offset = (unsigned int) (bio->bi_sector & job->block_mask);
 			head = to_bytes(offset);
@@ -875,6 +875,7 @@ static void flush_bios(struct cacheblock *cacheblock)
 		generic_make_request(bio);
 		bio = n;
 	}
+	cacheblock->dmc->sort++;
 }
 
 static int do_complete(struct kcached_job *job)
@@ -1247,7 +1248,6 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 
 		if (is_state(cache[cache_block].state, VALID)) { /* Valid cache block */
 			spin_unlock(&cache[cache_block].lock);
-			dmc->step5++;
 			return 1;
 		}
 
@@ -1257,7 +1257,6 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
 		bio_list_add(&cache[cache_block].bios, bio);
 
 		spin_unlock(&cache[cache_block].lock);
-		dmc->step1++;
 		return 0;
 	} else { /* WRITE hit */
 		if (dmc->write_policy == WRITE_THROUGH) { /* Invalidate cached data */
