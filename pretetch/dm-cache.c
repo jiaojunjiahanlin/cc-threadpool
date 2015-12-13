@@ -1311,9 +1311,9 @@ static int cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_block)
     
 
 
-static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
+static struct kcached_job *pf_new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	                                       sector_t request_block,
-                                           sector_t cache_block)
+                                           sector_t cache_block,unsigned int block_shift)
 {
 	struct dm_io_region src, dest;
 	struct kcached_job *job;
@@ -1323,6 +1323,11 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	src.count = dmc->block_size;
 	dest.bdev = dmc->cache_dev->bdev;
 	dest.sector = cache_block << dmc->block_shift;
+	if(block_shift > 0)
+	{
+        dest.sector = (dmc->size << dmc->block_shift)+((cache_block-dmc->size) << block_shift);
+	}
+	
 	dest.count = src.count;
 
 	job = mempool_alloc(_job_pool, GFP_NOIO);
@@ -1337,6 +1342,31 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	return job;
 }
 
+static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
+	                                       sector_t request_block,
+                                           sector_t cache_block)
+{
+	struct dm_io_region src, dest;
+	struct kcached_job *job;
+
+	src.bdev = dmc->src_dev->bdev;
+	src.sector = request_block;
+	src.count = dmc->block_size;
+	dest.bdev = dmc->cache_dev->bdev;
+	dest.sector = cache_block << dmc->block_shift;		
+	dest.count = src.count;
+
+	job = mempool_alloc(_job_pool, GFP_NOIO);
+	job->dmc = dmc;
+	job->bio = bio;
+	job->src = src;
+	job->dest = dest;
+	job->cacheblock = &dmc->cache[cache_block];
+	job->block_size=0;
+	job->block_mask=0;
+
+	return job;
+}
 /*
  * Handle a read cache miss:
  *  Update the metadata; fetch the necessary block from source device;
@@ -1671,6 +1701,9 @@ static int pf_cache_read_miss(struct cache_c *dmc, struct bio* bio,
 	unsigned int offset, head, tail;
 	struct kcached_job *job;
 	sector_t request_block, left;
+	unsigned int block_shift;
+
+
 
 	offset = (unsigned int)(bio->bi_sector & block_mask);
 	request_block = bio->bi_sector - offset;
@@ -1683,8 +1716,8 @@ static int pf_cache_read_miss(struct cache_c *dmc, struct bio* bio,
 		request_block, cache_block);
 
 	cache_insert(dmc, request_block, cache_block); /* Update metadata first */
-
-	job = new_kcached_job(dmc, bio, request_block, cache_block);
+	block_shift = ffs(block_size) - 1;
+	job = pf_new_kcached_job(dmc, bio, request_block, cache_block,block_shift);
 	job->block_mask=block_mask;
 	job->block_size=block_size;
 
