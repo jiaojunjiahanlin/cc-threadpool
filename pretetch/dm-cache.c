@@ -605,6 +605,7 @@ static int do_fetch(struct kcached_job *job)
 			offset = (unsigned int) (bio->bi_sector & job->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(job->block_size) - bio->bi_size - head;
+			dmc->sort++;
 
 			
 	}else{
@@ -1521,6 +1522,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	if (prefetch)
 	{
 			block_size = 32; /*8，16，24，32*/
+			ti->split_io = block_size;
 			block_shift = ffs(block_size) - 1;
 			block_mask = block_size - 1;
 			offset = bio->bi_sector & block_mask;
