@@ -54,7 +54,6 @@
 
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	65536
-#define SEQ_CACHE_SIZE	3048
 #define PREMAX  128
 #define skip_limit  64
 #define DEFAULT_CACHE_ASSOC	1024
@@ -1104,7 +1103,7 @@ static void cache_reset_counter(struct cache_c *dmc)
 	struct cacheblock *cache = dmc->cache;
 
 	DPRINTK("Reset LRU counters");
-	for (i=0; i<dmc->size+SEQ_CACHE_SIZE; i++)
+	for (i=0; i<dmc->size*2; i++)
 		cache[i].counter = 0;
 
 	dmc->counter = 0;
@@ -1476,7 +1475,9 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	int res;
 	int prefetch = 0;
 	struct cacheblock *cache = dmc->cache;
-
+    unsigned int block_size;	/* pf_Cache block size */
+	unsigned int block_shift;	/* pf_Cache block size in bits */
+	unsigned int block_mask;	/* pf_Cache block mask */
 	offset = bio->bi_sector & dmc->block_mask;
 	request_block = bio->bi_sector - offset;
 
@@ -1490,7 +1491,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-			offset = bio->bi_sector & dmc->block_mask;
+			block_size = 32; /*8，16，24，32*/
+			block_shift = ffs(block_size) - 1;
+			block_mask = block_size - 1;
+			offset = bio->bi_sector & block_mask;
 	        request_block = bio->bi_sector - offset;
 		
 		res = pf_cache_lookup(dmc, request_block, &cache_block,block_shift,block_size);
@@ -1679,6 +1683,8 @@ static int pf_cache_read_miss(struct cache_c *dmc, struct bio* bio,
 	cache_insert(dmc, request_block, cache_block); /* Update metadata first */
 
 	job = new_kcached_job(dmc, bio, request_block, cache_block);
+	job->block_mask=block_mask;
+	job->block_size=block_size;
 
 	head = to_bytes(offset);
 
@@ -1854,7 +1860,7 @@ static int load_metadata(struct cache_c *dmc) {
 	vfree((void *)meta_dmc);
 
 
-	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
+	order = (dmc->size*2) * sizeof(struct cacheblock);
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
 	       "sectors(%uKB), %s)",
@@ -2150,7 +2156,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
 
-	order = (dmc->size+SEQ_CACHE_SIZE) * sizeof(struct cacheblock);
+	order = (dmc->size*2) * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
