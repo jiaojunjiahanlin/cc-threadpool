@@ -191,8 +191,8 @@ struct kcached_job {
 	struct dm_io_region dest;
 	struct cacheblock *cacheblock;
 	int rw;
-	unsigned int block_size;
-	unsigned int block_mask;	
+	unsigned int block_size=0;
+	unsigned int block_mask=0;	
 	/*
 	 * When the original bio is not aligned with cache blocks,
 	 * we need extra bvecs and pages for padding.
