@@ -605,7 +605,7 @@ static int do_fetch(struct kcached_job *job)
 			offset = (unsigned int) (bio->bi_sector & job->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(job->block_size) - bio->bi_size - head;
-			dmc->sort++;
+		
 
 			
 	}else{
@@ -893,7 +893,7 @@ static int do_complete(struct kcached_job *job)
 		kfree(job->bvec);
 		kcached_put_pages(job->dmc, job->pages);
 	}
-
+    job->dmc->sort++;
 	flush_bios(job->cacheblock);
 	mempool_free(job, _job_pool);
 
