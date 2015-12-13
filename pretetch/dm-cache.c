@@ -602,15 +602,15 @@ static int do_fetch(struct kcached_job *job)
 
 		if(job->block_mask)
 	{
-
-			offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
-			head = to_bytes(offset);
-			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
-
-	}else{
 			offset = (unsigned int) (bio->bi_sector & job->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(job->block_size) - bio->bi_size - head;
+
+			
+	}else{
+			offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
+			head = to_bytes(offset);
+			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
 
 	}
 
@@ -753,15 +753,16 @@ static int do_store(struct kcached_job *job)
 	struct bio_vec *bvec;
 	if(job->block_mask)
 	{
-
-			offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
-			head = to_bytes(offset);
-			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
-
-	}else{
 			offset = (unsigned int) (bio->bi_sector & job->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(job->block_size) - bio->bi_size - head;
+
+			
+	}else{
+		    offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
+			head = to_bytes(offset);
+			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
+			
 
 	}
 
@@ -1597,12 +1598,12 @@ static int pf_cache_lookup(struct cache_c *dmc, sector_t block,
 	res = i < cache_assoc ? 1 : 0;
 	if (!res) { /* Cache miss */
 		if (invalid != -1) /* Choose the first empty frame */
-			*cache_block = (set_number* cache_assoc + invalid)*(block_size/dmc->block_size)+dmc->size;
+			*cache_block = (set_number* cache_assoc + invalid)+dmc->size;
 		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
-			*cache_block = (set_number* cache_assoc + oldest_clean)*(block_size/dmc->block_size) + dmc->size;
+			*cache_block = (set_number* cache_assoc + oldest_clean)+dmc->size;
 		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
 			res = 2;
-			*cache_block = (set_number* cache_assoc + oldest)*(block_size/dmc->block_size) + dmc->size;
+			*cache_block = (set_number* cache_assoc + oldest)+dmc->size;
 		} else {
 			res = -1;
 		}
@@ -1636,7 +1637,7 @@ static int pf_cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_blo
 
 	if (bio_data_dir(bio) == READ) { /* READ hit */
 		bio->bi_bdev = dmc->cache_dev->bdev;
-		bio->bi_sector = (cache_block << block_shift)+ offset;
+		bio->bi_sector = (dmc->size << dmc->block_shift)+((cache_block-dmc->size) << block_shift)+ offset;
 
 		spin_lock(&cache[cache_block].lock);
 
