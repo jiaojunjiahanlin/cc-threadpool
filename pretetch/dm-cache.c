@@ -884,7 +884,7 @@ static int do_complete(struct kcached_job *job)
 {
 	int r = 0;
 	struct bio *bio = job->bio;
-
+    struct cache_c *dmc;
 	DPRINTK("do_complete: %llu", bio->bi_sector);
 
 	bio_endio(bio, 0);
@@ -893,13 +893,13 @@ static int do_complete(struct kcached_job *job)
 		kfree(job->bvec);
 		kcached_put_pages(job->dmc, job->pages);
 	}
-  
+  	dmc=job->dmc;
 	flush_bios(job->cacheblock);
-	job->dmc->sort++;
 	mempool_free(job, _job_pool);
 
 	if (atomic_dec_and_test(&job->dmc->nr_jobs))
 		wake_up(&job->dmc->destroyq);
+	dmc->sort++;
 
 	return r;
 }
