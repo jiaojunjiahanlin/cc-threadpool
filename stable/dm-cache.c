@@ -96,6 +96,7 @@ struct cache_c {
 	unsigned long counter;		/* Logical timestamp of last access */
 	unsigned int write_policy;	/* Cache write policy */
 	sector_t dirty_blocks;		/* Number of dirty blocks */
+	sector_t step0;		/* Number of dirty blocks */
 
 	spinlock_t lock;		/* Lock to protect page allocation/deallocation */
 	struct page_list *pages;	/* Pages for I/O */
@@ -1629,6 +1630,7 @@ init:	/* Initialize the cache structs */
 	dmc->replace = 0;
 	dmc->writeback = 0;
 	dmc->dirty = 0;
+	dmc->step0 = 0;
 
 	ti->split_io = dmc->block_size;
 	ti->private = dmc;
