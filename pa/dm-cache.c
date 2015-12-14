@@ -2195,7 +2195,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
         printk("init  12 ");
-	order = (dmc->size*2) * sizeof(struct cacheblock);
+	order = (dmc->size) * sizeof(struct cacheblock);
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
@@ -2217,7 +2217,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 printk("init 13 ");
 
 init:	/* Initialize the cache structs */
-	for (i=0; i< dmc->size*2; i++) {
+	for (i=0; i< dmc->size; i++) {
 		bio_list_init(&dmc->cache[i].bios);
 		if(!persistence) dmc->cache[i].state = 0;
 		dmc->cache[i].counter = 0;
