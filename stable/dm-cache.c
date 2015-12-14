@@ -1209,8 +1209,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	sector_t request_block, cache_block = 0, offset;
 	int res;
 
-	offset = bio->bi_sector & dmc->block_mask;
-	request_block = bio->bi_sector - offset;
+    dmc->block_size = 32; /*8，16，24，32*/
+	dmc->block_shift = ffs(block_size) - 1;
+	dmc->block_mask = block_size - 1;
+
 
 	DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
 	        bio_rw(bio) == WRITE ? "WRITE" : (bio_rw(bio) == READ ?
