@@ -1450,8 +1450,6 @@ static int pf_cache_read_miss(struct cache_c *dmc, struct bio* bio,
 	cache_insert(dmc, request_block, cache_block); /* Update metadata first */
 	block_shift = ffs(block_size) - 1;
 	job = new_kcached_job(dmc, bio, request_block, cache_block);
-	job->block_mask=block_mask;
-	job->block_size=block_size;
 
 	head = to_bytes(offset);
 
