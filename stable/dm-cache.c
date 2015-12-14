@@ -1222,6 +1222,8 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 
 	}
+	offset = bio->bi_sector & dmc->block_mask;
+	request_block = bio->bi_sector - offset;
 
 
 
