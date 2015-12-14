@@ -1326,7 +1326,7 @@ static struct kcached_job *pf_new_kcached_job(struct cache_c *dmc, struct bio* b
 	src.count = block_size;
 	dest.bdev = dmc->cache_dev->bdev;
 
-    dest.sector = (dmc->size << dmc->block_shift)+((cache_block-dmc->size) << block_shift);
+    dest.sector = (cache_block<< block_shift);
 	dest.count = src.count;
 
 	job = mempool_alloc(_job_pool, GFP_NOIO);
@@ -1595,7 +1595,7 @@ static int pf_cache_lookup(struct cache_c *dmc, sector_t block,
 	int invalid = -1, oldest = -1, oldest_clean = -1;
 	unsigned long counter = ULONG_MAX, clean_counter = ULONG_MAX;
 
-	index=set_number*cache_assoc+dmc->size;
+	index=set_number*cache_assoc;
 
 	for (i=0; i<cache_assoc; i++, index++) {
 		if (is_state(cache[index].state, VALID) ||
@@ -1629,12 +1629,12 @@ static int pf_cache_lookup(struct cache_c *dmc, sector_t block,
 	res = i < cache_assoc ? 1 : 0;
 	if (!res) { /* Cache miss */
 		if (invalid != -1) /* Choose the first empty frame */
-			*cache_block = (set_number* cache_assoc + invalid)+dmc->size;
+			*cache_block = (set_number* cache_assoc + invalid);
 		else if (oldest_clean != -1) /* Choose the LRU clean block to replace */
-			*cache_block = (set_number* cache_assoc + oldest_clean)+dmc->size;
+			*cache_block = (set_number* cache_assoc + oldest_clean);
 		else if (oldest != -1) { /* Choose the LRU dirty block to evict */
 			res = 2;
-			*cache_block = (set_number* cache_assoc + oldest)+dmc->size;
+			*cache_block = (set_number* cache_assoc + oldest);
 		} else {
 			res = -1;
 		}
@@ -1668,7 +1668,7 @@ static int pf_cache_hit(struct cache_c *dmc, struct bio* bio, sector_t cache_blo
 
 	if (bio_data_dir(bio) == READ) { /* READ hit */
 		bio->bi_bdev = dmc->cache_dev->bdev;
-		bio->bi_sector = (dmc->size << dmc->block_shift)+((cache_block-dmc->size) << block_shift)+ offset;
+		bio->bi_sector = (cache_block<< block_shift)+ offset;
 
 		spin_lock(&cache[cache_block].lock);
 
