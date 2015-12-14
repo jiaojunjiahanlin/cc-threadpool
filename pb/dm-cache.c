@@ -139,6 +139,8 @@ struct kcached_job {
 	struct dm_io_region dest;
 	struct cacheblock *cacheblock;
 	int rw;
+	unsigned int block_size;
+	unsigned int block_mask;
 	/*
 	 * When the original bio is not aligned with cache blocks,
 	 * we need extra bvecs and pages for padding.
@@ -433,10 +435,20 @@ static int do_fetch(struct kcached_job *job)
 	struct page_list *pl;
 	printk("do_fetch");
 	
-			offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
+			if(job->block_mask > 0)
+	{
+			offset = (unsigned int) (bio->bi_sector & job->block_mask);
+			head = to_bytes(offset);
+			tail = to_bytes(job->block_size) - bio->bi_size - head;
+			dmc->step3++;
+
+			
+	}else{
+		    offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
-
+			dmc->step4++;
+			
 	
 
 	DPRINTK("do_fetch: %llu(%llu->%llu,%llu), head:%u,tail:%u",
@@ -576,9 +588,20 @@ static int do_store(struct kcached_job *job)
 	unsigned int offset, head, tail, remaining, nr_vecs;
 	struct bio_vec *bvec;
 
-		offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
-		head = to_bytes(offset);
-		tail = to_bytes(dmc->block_size) - bio->bi_size - head;
+		if(job->block_mask > 0)
+	{
+			offset = (unsigned int) (bio->bi_sector & job->block_mask);
+			head = to_bytes(offset);
+			tail = to_bytes(job->block_size) - bio->bi_size - head;
+			dmc->step3++;
+
+			
+	}else{
+		    offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
+			head = to_bytes(offset);
+			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
+			dmc->step4++;
+			
 
 	
 
@@ -1089,6 +1112,8 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	job->src = src;
 	job->dest = dest;
 	job->cacheblock = &dmc->cache[cache_block];
+	job->block_size=0;
+	job->block_mask=0;
 
 
 	return job;
@@ -1449,8 +1474,9 @@ static int pf_cache_read_miss(struct cache_c *dmc, struct bio* bio,
 
 	cache_insert(dmc, request_block, cache_block); /* Update metadata first */
 	block_shift = ffs(block_size) - 1;
-	job = new_kcached_job(dmc, bio, request_block, cache_block);
-
+	job = pf_new_kcached_job(dmc, bio, request_block, cache_block,block_shift,block_size);
+    job->block_mask=block_mask;
+	job->block_size=block_size;
 	head = to_bytes(offset);
 
 	left = (dmc->src_dev->bdev->bd_inode->i_size>>9) - request_block;
@@ -1497,6 +1523,8 @@ static struct kcached_job *pf_new_kcached_job(struct cache_c *dmc, struct bio* b
 	job->src = src;
 	job->dest = dest;
 	job->cacheblock = &dmc->cache[cache_block];
+	job->block_size=0;
+	job->block_mask=0;
 
 	return job;
 }

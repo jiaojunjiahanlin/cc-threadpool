@@ -2102,7 +2102,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 	printk("init  9 ");
 	if (1 == persistence) {
-		if (load_metadata(dmc)) {
+		if (0) {
 			ti->error = "dm-cache: Invalid cache configuration";
 			r = -EINVAL;
 			goto bad6;
@@ -2315,7 +2315,7 @@ static void cache_dtr(struct dm_target *ti)
 		       dmc->cache_hits * 100 / (dmc->reads + dmc->writes),
 		       dmc->replace, dmc->writeback, dmc->dirty,dmc->step1,dmc->step2,dmc->step3,dmc->step4);
 
-	dump_metadata(dmc); /* Always dump metadata to disk before exit */
+	//dump_metadata(dmc); /* Always dump metadata to disk before exit */
 	vfree((void *)dmc->cache);
 	dm_io_client_destroy(dmc->io_client);
 
