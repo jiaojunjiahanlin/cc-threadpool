@@ -1254,7 +1254,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-			block_size = 8; /*8，16，24，32*/
+			block_size = 32; /*8，16，24，32*/
 			block_shift = ffs(block_size) - 1;
 			block_mask = block_size - 1;
 			offset = bio->bi_sector & block_mask;
