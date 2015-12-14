@@ -139,8 +139,6 @@ struct kcached_job {
 	struct dm_io_region dest;
 	struct cacheblock *cacheblock;
 	int rw;
-	unsigned int block_size;
-	unsigned int block_mask;
 	/*
 	 * When the original bio is not aligned with cache blocks,
 	 * we need extra bvecs and pages for padding.
@@ -1110,6 +1108,7 @@ static struct kcached_job *new_kcached_job(struct cache_c *dmc, struct bio* bio,
 	job->dest = dest;
 	job->cacheblock = &dmc->cache[cache_block];
 
+
 	return job;
 }
 
@@ -1468,7 +1467,7 @@ static int pf_cache_read_miss(struct cache_c *dmc, struct bio* bio,
 
 	cache_insert(dmc, request_block, cache_block); /* Update metadata first */
 	block_shift = ffs(block_size) - 1;
-	job = pf_new_kcached_job(dmc, bio, request_block, cache_block,block_shift,block_size);
+	job = new_kcached_job(dmc, bio, request_block, cache_block);
 	job->block_mask=block_mask;
 	job->block_size=block_size;
 
@@ -1518,8 +1517,6 @@ static struct kcached_job *pf_new_kcached_job(struct cache_c *dmc, struct bio* b
 	job->src = src;
 	job->dest = dest;
 	job->cacheblock = &dmc->cache[cache_block];
-	job->block_size=0;
-	job->block_mask=0;
 
 	return job;
 }
