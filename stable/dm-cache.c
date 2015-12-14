@@ -64,7 +64,7 @@
 #define DEFAULT_WRITE_POLICY WRITE_THROUGH
 
 /* Number of pages for I/O */
-#define DMCACHE_COPY_PAGES 1048579
+#define DMCACHE_COPY_PAGES 1024
 
 /* States of a cache block */
 #define INVALID		0
@@ -1209,10 +1209,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	sector_t request_block, cache_block = 0, offset;
 	int res;
 
-    dmc->block_size = 32; /*8，16，24，32*/
-	dmc->block_shift = ffs(block_size) - 1;
-	dmc->block_mask = block_size - 1;
-	ti->split_io = dmc->block_size;
+    //dmc->block_size = 32; /*8，16，24，32*/
+	//dmc->block_shift = ffs(block_size) - 1;
+	//dmc->block_mask = block_size - 1;
+	//ti->split_io = dmc->block_size;
 
 
 	DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
