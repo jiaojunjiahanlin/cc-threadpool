@@ -66,7 +66,7 @@
 #define DEFAULT_WRITE_POLICY WRITE_THROUGH
 
 /* Number of pages for I/O */
-#define DMCACHE_COPY_PAGES 10240
+#define DMCACHE_COPY_PAGES 1024
 
 /* States of a cache block */
 #define INVALID		0
@@ -858,10 +858,10 @@ static int do_pages(struct kcached_job *job)
 static void flush_bios(struct cacheblock *cacheblock)
 {
 	struct bio *bio;
-	struct bio *n;
-    cacheblock->state=VALID;
+	struct bio *n;    
 	spin_lock(&cacheblock->lock);
 	bio = bio_list_get(&cacheblock->bios);
+	cacheblock->state=VALID;
 	if (is_state(cacheblock->state, WRITEBACK)) { /* Write back finished */
 		cacheblock->state = VALID;
 	} else { /* Cache insertion finished */
@@ -869,7 +869,6 @@ static void flush_bios(struct cacheblock *cacheblock)
 		clear_state(cacheblock->state, RESERVED);
 	}
 	spin_unlock(&cacheblock->lock);
-
 	while (bio) {
 		n = bio->bi_next;
 		bio->bi_next = NULL;
@@ -1523,7 +1522,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-			block_size = 32; /*8，16，24，32*/
+			block_size = 16; /*8，16，24，32*/
 			block_shift = ffs(block_size) - 1;
 			block_mask = block_size - 1;
 			offset = bio->bi_sector & block_mask;
