@@ -1755,7 +1755,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		}
 	}
 	if (1 == persistence) {
-		if (load_metadata(dmc)) {
+		if (0) {
 			ti->error = "dm-cache: Invalid cache configuration";
 			r = -EINVAL;
 			goto bad6;
