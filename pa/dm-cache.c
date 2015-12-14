@@ -1543,7 +1543,11 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 			return pf_cache_read_miss(dmc, bio, cache_block,block_mask,block_size); 
 		}
 		
-            
+    else if (2 == res) 
+   		 	{ /* Entire cache set is dirty; initiate a write-back */
+				write_back(dmc, cache_block, 1);
+				dmc->writeback++;
+			}
 		/* Forward to source device */
 		bio->bi_bdev = dmc->src_dev->bdev;
 		return 1;
