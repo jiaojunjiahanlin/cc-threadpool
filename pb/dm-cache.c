@@ -1254,17 +1254,17 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-			//block_size = 8; /*8，16，24，32*/
-			//block_shift = ffs(block_size) - 1;
-			//block_mask = block_size - 1;
-			//offset = bio->bi_sector & block_mask;
-	       // request_block = bio->bi_sector - offset;
+			block_size = 8; /*8，16，24，32*/
+			block_shift = ffs(block_size) - 1;
+			block_mask = block_size - 1;
+			offset = bio->bi_sector & block_mask;
+	        request_block = bio->bi_sector - offset;
 		
-		res = pf_cache_lookup(dmc, request_block, &cache_block,dmc->block_shift,dmc->block_size);
+		res = pf_cache_lookup(dmc, request_block, &cache_block,block_shift,block_size);
 		if (1 == res)
 		{
 			dmc->step0++;
-			return pf_cache_hit(dmc, bio, cache_block,dmc->block_mask,dmc->block_shift);
+			return pf_cache_hit(dmc, bio, cache_block,block_mask,block_shift);
 		}        
 		
 		
@@ -1273,7 +1273,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 			
 			dmc->step2++;
 
-			return pf_cache_read_miss(dmc, bio, cache_block,dmc->block_mask,dmc->block_size); 
+			return pf_cache_read_miss(dmc, bio, cache_block,block_mask,block_size); 
 		}
 		
     else if (2 == res) 
@@ -1946,7 +1946,7 @@ static void cache_dtr(struct dm_target *ti)
 		       dmc->cache_hits * 100 / (dmc->reads + dmc->writes),
 		       dmc->replace, dmc->writeback, dmc->dirty);
 
-	dump_metadata(dmc); /* Always dump metadata to disk before exit */
+//	dump_metadata(dmc); /* Always dump metadata to disk before exit */
 	vfree((void *)dmc->cache);
 	dm_io_client_destroy(dmc->io_client);
 
