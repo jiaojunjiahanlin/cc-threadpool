@@ -66,7 +66,7 @@
 #define DEFAULT_WRITE_POLICY WRITE_THROUGH
 
 /* Number of pages for I/O */
-#define DMCACHE_COPY_PAGES 4096
+#define DMCACHE_COPY_PAGES 10240
 
 /* States of a cache block */
 #define INVALID		0
@@ -859,7 +859,7 @@ static void flush_bios(struct cacheblock *cacheblock)
 {
 	struct bio *bio;
 	struct bio *n;
-
+    cacheblock->state=VALID;
 	spin_lock(&cacheblock->lock);
 	bio = bio_list_get(&cacheblock->bios);
 	if (is_state(cacheblock->state, WRITEBACK)) { /* Write back finished */
