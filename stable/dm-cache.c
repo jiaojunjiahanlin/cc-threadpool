@@ -1208,11 +1208,20 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	struct cache_c *dmc = (struct cache_c *) ti->private;
 	sector_t request_block, cache_block = 0, offset;
 	int res;
-
+	if(dmc->step0==0)
+	{
     dmc->block_size = 8; /*8，16，24，32*/
 	dmc->block_shift = ffs(block_size) - 1;
 	dmc->block_mask = block_size - 1;
 	ti->split_io = dmc->block_size;
+	bio->bi_bdev = dmc->src_dev->bdev;
+	dmc->step0++;
+
+	return 1;
+
+
+	}
+
 
 
 	DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
