@@ -433,20 +433,11 @@ static int do_fetch(struct kcached_job *job)
 	struct page_list *pl;
 	printk("do_fetch");
 	
-		if(job->block_mask > 0)
-	{
-			offset = (unsigned int) (bio->bi_sector & job->block_mask);
-			head = to_bytes(offset);
-			tail = to_bytes(job->block_size) - bio->bi_size - head;
-		
-
-			
-	}else{
 			offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
 			head = to_bytes(offset);
 			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
 
-	}
+	
 
 	DPRINTK("do_fetch: %llu(%llu->%llu,%llu), head:%u,tail:%u",
 	        bio->bi_sector, job->src.sector, job->dest.sector,
@@ -584,21 +575,12 @@ static int do_store(struct kcached_job *job)
 	struct cache_c *dmc = job->dmc;
 	unsigned int offset, head, tail, remaining, nr_vecs;
 	struct bio_vec *bvec;
+
+		offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
+		head = to_bytes(offset);
+		tail = to_bytes(dmc->block_size) - bio->bi_size - head;
+
 	
-		if(job->block_mask > 0)
-	{
-			offset = (unsigned int) (bio->bi_sector & job->block_mask);
-			head = to_bytes(offset);
-			tail = to_bytes(job->block_size) - bio->bi_size - head;
-		
-
-			
-	}else{
-			offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
-			head = to_bytes(offset);
-			tail = to_bytes(dmc->block_size) - bio->bi_size - head;
-
-	}
 
 	DPRINTK("do_store: %llu(%llu->%llu,%llu), head:%u,tail:%u",
 	        bio->bi_sector, job->src.sector, job->dest.sector,
