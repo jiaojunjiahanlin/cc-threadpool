@@ -1207,7 +1207,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		      union map_info *map_context)
 {
 	struct cache_c *dmc = (struct cache_c *) ti->private;
-	sector_t request_block, cache_block = 0, offset;
+	sector_t request_block, cache_block = 0, offset,i;
 	int res;
 	if(dmc->step0==0)
 	{
@@ -1217,7 +1217,8 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	return 1;
 	}
-	dmc->block_size = 32; /*8，16，24，32*/
+	i=random(1,3);
+	dmc->block_size = 8*i; /*8，16，24，32*/
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
 	ti->split_io = dmc->block_size;

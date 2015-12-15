@@ -1516,6 +1516,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		prefetch=skip_prefetch_queue(dmc, bio);
 		prefetch=1;
 	}
+		DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
+	        bio_rw(bio) == WRITE ? "WRITE" : (bio_rw(bio) == READ ?
+	        "READ":"READA"), bio->bi_sector, request_block, offset,
+	        bio->bi_size);
 
 	if (prefetch)
 	{
