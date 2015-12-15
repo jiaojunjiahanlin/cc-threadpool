@@ -41,7 +41,7 @@
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>
 
-#define DMC_DEBUG 0
+#define DMC_DEBUG 1
 
 #define DM_MSG_PREFIX "cache"
 #define DMC_PREFIX "dm-cache: "
@@ -1513,9 +1513,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	if (bio_data_dir(bio) == READ)
 	{
 		dmc->reads++;
-		spin_lock(&dmc->lock);
 		prefetch=skip_prefetch_queue(dmc, bio);
-		spin_unlock(&dmc->lock);
 		prefetch=1;
 	}
 
