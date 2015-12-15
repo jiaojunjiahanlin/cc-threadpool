@@ -861,7 +861,6 @@ static void flush_bios(struct cacheblock *cacheblock)
 	struct bio *n;    
 	spin_lock(&cacheblock->lock);
 	bio = bio_list_get(&cacheblock->bios);
-	cacheblock->state=VALID;
 	if (is_state(cacheblock->state, WRITEBACK)) { /* Write back finished */
 		cacheblock->state = VALID;
 	} else { /* Cache insertion finished */
