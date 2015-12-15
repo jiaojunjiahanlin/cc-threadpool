@@ -66,7 +66,7 @@
 #define DEFAULT_WRITE_POLICY WRITE_THROUGH
 
 /* Number of pages for I/O */
-#define DMCACHE_COPY_PAGES 1024
+#define DMCACHE_COPY_PAGES 10240
 
 /* States of a cache block */
 #define INVALID		0

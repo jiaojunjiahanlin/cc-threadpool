@@ -1213,18 +1213,14 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	{
    
 	bio->bi_bdev = dmc->src_dev->bdev;
-
+	dmc->step0++;
 	return 1;
 	}
-	dmc->step0++;
-	if(dmc->step0>20000)
-	{
-		dmc->block_size = 32; 
-	}
-	else
-	{
-        dmc->block_size = 8; 
-	}
+
+
+
+
+	dmc->block_size = 32; 
 	/*8，16，24，32*/
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
