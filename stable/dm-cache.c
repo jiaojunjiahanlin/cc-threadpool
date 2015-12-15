@@ -1212,7 +1212,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	if(dmc->step0==0)
 	{
     dmc->block_size = 8; /*8，16，24，32*/
-	dmc->block_shift = ffs(dmc->block_size) - 1
+	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
 	ti->split_io = dmc->block_size;
 	bio->bi_bdev = dmc->src_dev->bdev;
