@@ -41,7 +41,7 @@
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>
 
-#define DMC_DEBUG 0
+#define DMC_DEBUG 1
 
 #define DM_MSG_PREFIX "cache"
 #define DMC_PREFIX "dm-cache: "
@@ -1212,7 +1212,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	if(dmc->step0==0)
 	{
     dmc->block_size = 8; /*8，16，24，32*/
-	dmc->block_shift = ffs(dmc->block_size) - 1;
+	dmc->block_shift = ffs(dmc->block_size) - 1
 	dmc->block_mask = dmc->block_size - 1;
 	ti->split_io = dmc->block_size;
 	bio->bi_bdev = dmc->src_dev->bdev;
@@ -1530,7 +1530,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			goto bad6;
 		}
 	} else
-		dmc->block_size = DEFAULT_BLOCK_SIZE;
+	dmc->block_size = DEFAULT_BLOCK_SIZE;
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
 
@@ -1597,7 +1597,7 @@ static int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	} else
 		dmc->write_policy = DEFAULT_WRITE_POLICY;
 
-	order = dmc->size * sizeof(struct cacheblock);
+	order = dmc->size * sizeof(struct cacheblock)
 	localsize = data_size >> 11;
 	DMINFO("Allocate %lluKB (%luB per) mem for %llu-entry cache" \
 	       "(capacity:%lluMB, associativity:%u, block size:%u " \
