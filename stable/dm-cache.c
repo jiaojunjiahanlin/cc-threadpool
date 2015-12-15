@@ -55,7 +55,7 @@
 /* Default cache parameters */
 #define DEFAULT_CACHE_SIZE	65536
 #define DEFAULT_CACHE_ASSOC	1024
-#define DEFAULT_BLOCK_SIZE	8
+#define DEFAULT_BLOCK_SIZE	32
 #define CONSECUTIVE_BLOCKS	512
 
 /* Write policy */
@@ -1209,19 +1209,19 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	struct cache_c *dmc = (struct cache_c *) ti->private;
 	sector_t request_block, cache_block = 0, offset;
 	int res;
-	if(dmc->step0==0)
-	{
-    dmc->block_size = 8; /*8，16，24，32*/
-	dmc->block_shift = ffs(dmc->block_size) - 1;
-	dmc->block_mask = dmc->block_size - 1;
-	ti->split_io = dmc->block_size;
-	bio->bi_bdev = dmc->src_dev->bdev;
-	dmc->step0++;
+	//if(dmc->step0==0)
+	//{
+   // dmc->block_size = 8; /*8，16，24，32*/
+	//dmc->block_shift = ffs(dmc->block_size) - 1;
+	//dmc->block_mask = dmc->block_size - 1;
+	//ti->split_io = dmc->block_size;
+	//bio->bi_bdev = dmc->src_dev->bdev;
+	//dmc->step0++;
 
-	return 1;
+	//return 1;
 
 
-	}
+	//}
 	offset = bio->bi_sector & dmc->block_mask;
 	request_block = bio->bi_sector - offset;
 
