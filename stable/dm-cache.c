@@ -1232,8 +1232,6 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 		bio->bi_bdev = dmc->src_dev->bdev;
 		return 1;
 	}
-
-	ti->split_io = dmc->block_size;
 	offset = bio->bi_sector & dmc->block_mask;
 	request_block = bio->bi_sector - offset;
 
