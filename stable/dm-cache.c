@@ -1222,11 +1222,10 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	dmc->block_mask = dmc->block_size - 1;
 	ti->split_io = dmc->block_size;
 
-	if (to_sector(bio->bi_size) != dmc->block_size）
+	if(to_sector(bio->bi_size!=dmc->block_size))
 	{
-			bio->bi_bdev = dmc->src_dev->bdev;
-			return 1;
-
+		bio->bi_bdev = dmc->src_dev->bdev;
+		return 1;
 	}
 
 	ti->split_io = dmc->block_size;
