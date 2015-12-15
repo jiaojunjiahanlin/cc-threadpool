@@ -1522,11 +1522,17 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 
 	if (prefetch)
 	{
-			block_size = 16; /*8，16，24，32*/
+			block_size = 32; /*8，16，24，32*/
 			block_shift = ffs(block_size) - 1;
 			block_mask = block_size - 1;
+			ti->split_io = block_size;
 			offset = bio->bi_sector & block_mask;
 	        request_block = bio->bi_sector - offset;
+	        if(to_sector(bio->bi_size)!=block_size)
+				{
+					bio->bi_bdev = dmc->src_dev->bdev;
+					return 1;
+				}
 		
 		res = pf_cache_lookup(dmc, request_block, &cache_block,block_shift,block_size);
 		if (1 == res)
