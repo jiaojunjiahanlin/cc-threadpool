@@ -66,7 +66,7 @@
 #define DEFAULT_WRITE_POLICY WRITE_THROUGH
 
 /* Number of pages for I/O */
-#define DMCACHE_COPY_PAGES 102400
+#define DMCACHE_COPY_PAGES 4816
 
 /* States of a cache block */
 #define INVALID		0
@@ -772,6 +772,17 @@ static int do_store(struct kcached_job *job)
 	DPRINTK("do_store: %llu(%llu->%llu,%llu), head:%u,tail:%u",
 	        bio->bi_sector, job->src.sector, job->dest.sector,
 	        job->src.count, head, tail);
+	if (bio_data_dir(bio) == READ) {
+		clone = bio_clone(bio, GFP_NOIO);
+		for (i=bio->bi_idx; i<bio->bi_vcnt; i++) {
+			get_page(bio->bi_io_vec[i].bv_page);
+		}
+		DPRINTK("bio ended for %llu:%u", bio->bi_sector, bio->bi_size);
+		bio_endio(bio, 0);
+		bio = clone;
+		job->bio = clone;
+	}
+
 
 
 	if (0 == job->nr_pages) /* Original request is aligned with cache blocks */
@@ -885,6 +896,12 @@ static int do_complete(struct kcached_job *job)
     struct cache_c *dmc;
 	DPRINTK("do_complete: %llu", bio->bi_sector);
     dmc=job->dmc;
+    if (bio_data_dir(bio) == READ) {
+		for (i=bio->bi_idx; i<bio->bi_vcnt; i++) {
+			put_page(bio->bi_io_vec[i].bv_page);
+		}
+		bio_put(bio);
+	} else
 	bio_endio(bio, 0);
 
 	if (job->nr_pages > 0) {
