@@ -64,7 +64,7 @@
 #define DEFAULT_WRITE_POLICY WRITE_THROUGH
 
 /* Number of pages for I/O */
-#define DMCACHE_COPY_PAGES 1024
+#define DMCACHE_COPY_PAGES 2048
 
 /* States of a cache block */
 #define INVALID		0
@@ -1211,7 +1211,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	int res;
 	if(dmc->step0==0)
 	{
-	dmc->block_size = 32; 
+	dmc->block_size = 16; 
 	/*8，16，24，32*/
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
