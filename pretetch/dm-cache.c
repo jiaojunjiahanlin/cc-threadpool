@@ -53,7 +53,7 @@
 #endif
 
 /* Default cache parameters */
-#define DEFAULT_CACHE_SIZE	133152
+#define DEFAULT_CACHE_SIZE	65536
 #define PREMAX  128
 #define skip_limit  64
 #define DEFAULT_CACHE_ASSOC	1024
