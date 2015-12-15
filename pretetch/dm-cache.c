@@ -748,7 +748,7 @@ static int do_fetch(struct kcached_job *job)
 static int do_store(struct kcached_job *job)
 {
 	int i, j, r = 0;
-	struct bio *bio = job->bio ;
+	struct bio *bio = job->bio, *clone;
 	struct cache_c *dmc = job->dmc;
 	unsigned int offset, head, tail, remaining, nr_vecs;
 	struct bio_vec *bvec;
@@ -891,7 +891,7 @@ static void flush_bios(struct cacheblock *cacheblock)
 
 static int do_complete(struct kcached_job *job)
 {
-	int r = 0;
+	int i,r = 0;
 	struct bio *bio = job->bio;
     struct cache_c *dmc;
 	DPRINTK("do_complete: %llu", bio->bi_sector);
