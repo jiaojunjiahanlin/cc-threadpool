@@ -1530,7 +1530,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	if (bio_data_dir(bio) == READ)
 	{
 		dmc->reads++;
-		prefetch=skip_prefetch_queue(dmc, bio);
+		//prefetch=skip_prefetch_queue(dmc, bio);
 		prefetch=1;
 	}
 		DPRINTK("Got a %s for %llu ((%llu:%llu), %u bytes)",
