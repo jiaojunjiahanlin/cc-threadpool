@@ -415,7 +415,7 @@ static int do_fetch(struct kcached_job *job)
 	unsigned int offset, head, tail, remaining, nr_vecs, idx = 0;
 	struct bio_vec *bvec;
 	struct page_list *pl;
-	printk("do_fetch");
+	//printk("do_fetch");
 	offset = (unsigned int) (bio->bi_sector & dmc->block_mask);
 	head = to_bytes(offset);
 	tail = to_bytes(dmc->block_size) - bio->bi_size - head;
@@ -536,7 +536,7 @@ static int do_fetch(struct kcached_job *job)
 		job->bvec = bvec;
 		r = dm_io_async_bvec(1, &job->src, READ, job->bvec + idx,
 		                     io_callback, job);
-		printk("do_fetch end");
+		//printk("do_fetch end");
 
 		return r;
 	}
@@ -1211,7 +1211,7 @@ static int cache_map(struct dm_target *ti, struct bio *bio,
 	int res;
 	if(dmc->step0==0)
 	{
-	dmc->block_size = 64; 
+	dmc->block_size = 32; 
 	/*8，16，24，32*/
 	dmc->block_shift = ffs(dmc->block_size) - 1;
 	dmc->block_mask = dmc->block_size - 1;
